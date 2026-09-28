@@ -34,6 +34,21 @@ struct BuiltIn {
     let filter: String
 }
 
+/// Fujifilm digital film simulations. Their PNGs come from Tools/ImportFujiLUTs.swift.
+struct FujiSimulation {
+    let id: String
+    let name: String
+    let about: String
+    var strength: Float = 1
+}
+
+/// One camera per series on Fujifilm's LUT download page.
+struct FujiPackage {
+    let id: String
+    let model: String
+    let simulations: [String]
+}
+
 let color = "Film Simulation/Color"
 let mono = "Film Simulation/Black and White"
 
@@ -184,6 +199,28 @@ let builtIns: [BuiltIn] = [
     BuiltIn(id: "sys-mono", name: "单色", about: "Core Image 内置。低反差黑白。", filter: "CIPhotoEffectMono"),
     BuiltIn(id: "sys-tonal", name: "色调", about: "Core Image 内置。灰阶均匀的黑白。", filter: "CIPhotoEffectTonal"),
     BuiltIn(id: "sys-noir", name: "黑白", about: "Core Image 内置。高反差黑白。", filter: "CIPhotoEffectNoir"),
+]
+
+let fujiSimulations: [String: FujiSimulation] = Dictionary(uniqueKeysWithValues: [
+    FujiSimulation(id: "provia", name: "PROVIA", about: "富士标准。中性，通透。"),
+    FujiSimulation(id: "velvia", name: "Velvia", about: "富士鲜艳。风光高饱和，反差大。", strength: 0.85),
+    FujiSimulation(id: "astia", name: "ASTIA", about: "富士柔和。肤色柔，反差低。"),
+    FujiSimulation(id: "classicchrome", name: "Classic Chrome", about: "低饱和，暗部偏硬的纪实色。"),
+    FujiSimulation(id: "realaace", name: "Reala Ace", about: "真实中性，影调略硬。"),
+    FujiSimulation(id: "proneg", name: "PRO Neg. Std", about: "人像负片。肤色干净，饱和低。"),
+    FujiSimulation(id: "classicneg", name: "Classic Neg.", about: "经典负片。暖阴影，冷高光。"),
+    FujiSimulation(id: "eterna", name: "ETERNA", about: "电影负片。低饱和，高光柔和。"),
+    FujiSimulation(id: "eternabb", name: "ETERNA 跳漂白", about: "低饱和、高反差的电影冲洗。"),
+    FujiSimulation(id: "acros", name: "ACROS", about: "富士黑白。阴影细节足。"),
+].map { ($0.id, $0) })
+
+/// Keep in sync with `packages` in Tools/ImportFujiLUTs.swift and the `fx-` families in LookLibrary.
+let fujiPackages: [FujiPackage] = [
+    FujiPackage(id: "eterna55", model: "GFX ETERNA 55", simulations: ["provia", "velvia", "astia", "classicchrome", "realaace", "proneg", "classicneg", "eterna", "eternabb", "acros"]),
+    FujiPackage(id: "gfx100ii", model: "GFX100 II", simulations: ["eterna", "eternabb"]),
+    FujiPackage(id: "gfx100rf", model: "GFX100RF", simulations: ["eterna", "eternabb"]),
+    FujiPackage(id: "xt30iii", model: "X-T30 III", simulations: ["eterna", "eternabb"]),
+    FujiPackage(id: "x100vi", model: "X100VI", simulations: ["eterna", "eternabb"]),
 ]
 
 // MARK: - HaldCLUT
@@ -404,6 +441,13 @@ func catalogJSON() -> String {
         if film.vignette > 0 { fields.append("\"vignette\": \(number(film.vignette))") }
         if film.halation > 0 { fields.append("\"halation\": \(number(film.halation))") }
         lines.append("  {" + fields.joined(separator: ", ") + "}")
+    }
+    for package in fujiPackages {
+        for id in package.simulations {
+            guard let simulation = fujiSimulations[id] else { fatalError("未知的富士模拟 \(id)") }
+            let key = "\(package.id)-\(simulation.id)"
+            lines.append("  {\"id\": \(quoted("fx-\(key)")), \"name\": \(quoted(simulation.name)), \"about\": \(quoted("\(package.model) 的 LUT。\(simulation.about)")), \"grade\": \"lut\", \"lut\": \(quoted("fuji-\(key)")), \"strength\": \(number(simulation.strength))}")
+        }
     }
     return "[\n" + lines.joined(separator: ",\n") + "\n]\n"
 }

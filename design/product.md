@@ -32,11 +32,11 @@
 
 对标 Dehancer、VSCO、RNI 这类胶片模拟的观感：影调、色相、肤色、高光滚落和颗粒像胶片，而不是整体调个色温。
 
-颜色不在仓库里手调。胶片款用开源的 RawTherapee Film Simulation Collection（CC BY-SA 4.0），系统款用 Core Image 自带的照片效果。iPhone 出图已经是处理过的 Display P3，在这张成片上套 LUT，复制不了另一颗传感器或真实胶片的光谱响应。不从相机固件抽取 LUT，不打包许可不允许再分发的 LUT。
+颜色不在仓库里手调。胶片款用开源的 RawTherapee Film Simulation Collection（CC BY-SA 4.0），系统款用 Core Image 自带的照片效果。GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头这五个分类来自富士官方的 F-Log2 LUT，没有再分发许可，只用于本地构建，公开发布前要删掉或拿到授权，见 [rendering.md](rendering.md)。iPhone 出图已经是处理过的 Display P3，在这张成片上套 LUT，复制不了另一颗传感器或真实胶片的光谱响应。不从相机固件抽取 LUT。公开发布的版本不打包许可不允许再分发的 LUT；富士官方这五个分类是目前唯一的例外，只留在本地构建里。
 
 ## 滤镜目录
 
-界面文案是「滤镜」。代码类型是 `Look`。一条横滑，原图在第一项。柯达、富士、拍立得、黑白、爱克发、电影感、系统，是同一层分类。
+界面文案是「滤镜」。代码类型是 `Look`。一条横滑，原图在第一项。柯达、富士、GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头、拍立得、黑白、爱克发、电影感、系统，是同一层分类。
 
 胶片款的图在 `FilmLUTs/film-<id>.png`，由 `Tools/ImportFilmLUTs.swift` 从 HaldCLUT 转换，名称、默认强度、颗粒和暗角也写在这个脚本里。系统款没有图，直接调用 Core Image 滤镜。
 
@@ -115,6 +115,20 @@
 | `sys-mono` | 单色 | 系统 | `CIPhotoEffectMono` |
 | `sys-tonal` | 色调 | 系统 | `CIPhotoEffectTonal` |
 | `sys-noir` | 黑白 | 系统 | `CIPhotoEffectNoir` |
+| `fx-eterna55-provia` | PROVIA | GFX 电影机 | GFX ETERNA 55 FLog2_to_PROVIA |
+| `fx-eterna55-velvia` | Velvia | GFX 电影机 | GFX ETERNA 55 FLog2_to_Velvia |
+| `fx-eterna55-astia` | ASTIA | GFX 电影机 | GFX ETERNA 55 FLog2_to_ASTIA |
+| `fx-eterna55-classicchrome` | Classic Chrome | GFX 电影机 | GFX ETERNA 55 FLog2_to_CLASSIC-CHROME |
+| `fx-eterna55-realaace` | Reala Ace | GFX 电影机 | GFX ETERNA 55 FLog2_to_REALA-ACE |
+| `fx-eterna55-proneg` | PRO Neg. Std | GFX 电影机 | GFX ETERNA 55 FLog2_to_PRO-Neg.Std |
+| `fx-eterna55-classicneg` | Classic Neg. | GFX 电影机 | GFX ETERNA 55 FLog2_to_CLASSIC-Neg. |
+| `fx-eterna55-eterna` | ETERNA | GFX 电影机 | GFX ETERNA 55 FLog2_to_ETERNA |
+| `fx-eterna55-eternabb` | ETERNA 跳漂白 | GFX 电影机 | GFX ETERNA 55 FLog2_to_ETERNA-BB |
+| `fx-eterna55-acros` | ACROS | GFX 电影机 | GFX ETERNA 55 FLog2_to_ACROS |
+| `fx-gfx100ii-eterna` / `-eternabb` | ETERNA / ETERNA 跳漂白 | GFX 无反 | GFX100 II |
+| `fx-gfx100rf-eterna` / `-eternabb` | ETERNA / ETERNA 跳漂白 | GFX 固定镜头 | GFX100RF |
+| `fx-xt30iii-eterna` / `-eternabb` | ETERNA / ETERNA 跳漂白 | X 无反 | X-T30 III |
+| `fx-x100vi-eterna` / `-eternabb` | ETERNA / ETERNA 跳漂白 | X 固定镜头 | X100VI |
 
 来源一栏是 HaldCLUT 的文件名或 Core Image 滤镜名。强度、颗粒、暗角和光晕的默认值见 `Looks.json`，做法见 [rendering.md](rendering.md)。
 
@@ -140,7 +154,7 @@ flowchart TB
 - 点「双摄」进入前后同时取景，再点一次回到进入前的单摄镜头和滤镜。双摄里两套滤镜留在这次打开的内存里。排列在快门上方：上下、左右、画中画、圆窗、叠加。上下和左右可以交换谁在上或在左。画中画和圆窗的小窗可以在画面里拖，换角吸回四角，交换对调谁是大图。叠加有透明度（0.2 到 0.8）和换层。点中哪一路，滤镜和变焦只改这一路。滤镜标题旁可以点「后置」「前置」。双摄时翻转改成交换两路位置，不退出双摄。细节在 [multicam.md](multicam.md)
 - 面板默认收起，取景尽量占满。快门左侧是「相框」，右侧是「滤镜」。两个面板互斥，一次只展开一个。附加控制收在按钮后面，需要时才展开，取景保持大
 - 点「相框」后可以选：关闭、留白、暗房、相纸、窗线、角标、压底、拍立得、印记。留白、暗房、相纸、拍立得、印记往外扩。窗线、角标、压底盖在照片上，不改变成片比例。角标、压底、拍立得、印记可以开关型号、地点和日期，并写一行最多 12 个字的短句。地点默认关。改动立刻出现在取景上。点相框边只收起面板；点照片内容会收起面板并对焦
-- 点「滤镜」后，快门上方展开两排。上面是分类：原图、柯达、富士、拍立得、黑白、爱克发、电影感、系统。下面只显示当前分类的缩略图。点分类不改已经套上的风格。再点按钮，或点画面，面板收起。点画面收起时仍会对焦
+- 点「滤镜」后，快门上方展开两排。上面是分类：原图、柯达、富士、GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头、拍立得、黑白、爱克发、电影感、系统。下面只显示当前分类的缩略图。点分类不改已经套上的风格。再点按钮，或点画面，面板收起。点画面收起时仍会对焦
 - 缩略图是当前画面。选中为 2pt 白环。非原图风格可以点「调节」，或再点一次已选缩略图，改强度、褪色、颗粒和暗角。光晕只出现在大片、雾夜、烛光。拖动时预览跟着变。点「保存」后记在这次打开的内存里，换到别的风格再回来仍然是改过的数值。不点保存就收起，回到上次保存的数值。原图没有调节
 - 第一次套上某款时，强度、褪色、颗粒和暗角用这款自己的默认。多数胶片款强度是 100，反差大的几款是 60 到 85，写在目录里
 - 快门是白环。按下进入确认页。确认页持有的就是刚才取景里那张已经裁切、已经套好风格、并且带上当前相框的图。确认页仍只有重拍和保存

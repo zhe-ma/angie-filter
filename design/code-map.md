@@ -17,7 +17,7 @@ AngieFilter/
   Features/             SwiftUI
     Camera/             取景
     Review/             确认
-  Resources/            胶片 LUT、颗粒板、目录 JSON
+  Resources/            胶片 LUT、富士官方 LUT、颗粒板、目录 JSON
 ```
 
 Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 import SwiftUI。`CVPixelBuffer` 和 `CIImage` 留在 CameraPipeline。

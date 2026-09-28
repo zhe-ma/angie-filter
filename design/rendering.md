@@ -55,6 +55,32 @@ flowchart LR
 | --- | --- | --- | --- |
 | RawTherapee Film Simulation Collection 2015-09-20（Pat David、Pavlov Dmitry、Michael Ezra） | 62 | CC BY-SA 4.0 | `Resources/FilmLUTs/film-<id>.png` |
 | Core Image 照片效果 | 8 | 系统自带 | 不占资源 |
+| 富士官方 F-Log2 3D-LUT，下载页每个系列一台机型 | 18 | 没有再分发许可，只用于本地构建 | `Resources/FujiLUTs/fuji-<机型>-<模拟>.png` |
+
+富士下载页按系列分组，每个系列取一台带 F-Log2 的新机型，一个系列是一个分类：
+
+| 分类 | 机型包 | 款 |
+| --- | --- | --- |
+| GFX 电影机 | GFX ETERNA 55 Ver.1.10 | PROVIA、Velvia、ASTIA、Classic Chrome、Reala Ace、PRO Neg. Std、Classic Neg.、ETERNA、ETERNA 跳漂白、ACROS |
+| GFX 无反 | GFX100 II Ver.1.00 | ETERNA、ETERNA 跳漂白 |
+| GFX 固定镜头 | GFX100RF Ver.1.00 | ETERNA、ETERNA 跳漂白 |
+| X 无反 | X-T30 III Ver.1.00 | ETERNA、ETERNA 跳漂白 |
+| X 固定镜头 | X100VI Ver.1.00 | ETERNA、ETERNA 跳漂白 |
+
+只有 GFX ETERNA 55 的包带完整的胶片模拟，其他机型的 F-Log2 只有 ETERNA 和跳漂白，而且只有 33 格点。GFX100 II 和 GFX100RF 的源 LUT 逐字节相同，这两个分类的效果一样。四台照相机的 WDR 中性渲染也是同一份。X-T30 III、X100VI 的 ETERNA 和 GFX 的不同，和 GFX ETERNA 55 的差得更多，平均约 15/255。
+
+富士的下载页和压缩包里都没有许可条款，没有授权就不能随应用公开发布；上架前要么拿到富士的书面许可，要么删掉 `FujiLUTs/` 和目录里 `fx-` 开头的条目。
+
+原始 LUT 的输入是 F-Log2 视频，不是成片。`Tools/ImportFujiLUTs.swift` 把照片当作这台机型中性渲染 `FLog2_to_WDR` 的输出，数值求逆得到对应的 F-Log2，再接上 `FLog2_to_<模拟>`，合成一张 64³ 表。所以这组效果是「同一台富士相机，中性渲染和这款模拟之间的差」，不是在复制富士的传感器。WDR 渲染不出 sRGB 里最饱和的蓝，这些蓝会先落到它能渲出的最近颜色，所以深蓝的天和水会比原图略淡。
+
+下载地址和解压目录写在脚本开头。每个包解压到以机型 id 命名的子目录，然后：
+
+```bash
+swiftc -O Tools/ImportFujiLUTs.swift -o /tmp/import-fuji
+/tmp/import-fuji /tmp/fuji-lut
+```
+
+机型和模拟的名称、说明、默认强度写在 `Tools/ImportFilmLUTs.swift` 的 `fujiPackages` 和 `fujiSimulations`，由它写进 `Looks.json`。分组在 `LookLibrary.familySpecs`。
 
 胶片 LUT 的署名和改动说明在 `Resources/FilmLUTs/FilmSimulation-LICENSE.txt`，跟着应用一起打包。CC BY-SA 要求署名、给出许可链接、注明改动，改过的 LUT 仍按 CC BY-SA 发布。以后上架时，应用里要有一处能看到这段署名。
 
@@ -82,7 +108,7 @@ swiftc -O Tools/ImportFilmLUTs.swift -o /tmp/import-luts
 2. 三线性插值重采样成 64³，写成 512×512 PNG，布局同下一节。每款抽 2000 个格点和 HaldCLUT 直接插值比较，差不超过 1/255。
 3. 删掉 `FilmLUTs/` 里目录已经不用的 `film-*.png`。
 4. 用固定种子重写两张颗粒板。
-5. 重写 `Looks.json`：原图、八款内置、胶片款。
+5. 重写 `Looks.json`：原图、八款内置、胶片款、富士款。富士款的 PNG 不由这个脚本生成。
 
 改名称、说明、默认强度、颗粒、暗角、光晕，或者增删一款，都在脚本顶部的目录里改，然后重跑。分组在 `LookLibrary.familySpecs`。
 

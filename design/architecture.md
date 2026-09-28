@@ -69,7 +69,7 @@ flowchart LR
 | CameraPipeline | `AngieFilter/CameraPipeline/Photos/` | `PhotoLibraryStore` |
 | Features | `AngieFilter/Features/Camera/` | `CameraView`、`CameraViewModel`、`FilterStripView` |
 | Features | `AngieFilter/Features/Review/` | `ReviewView` |
-| 资源 | `AngieFilter/Resources/` | 胶片 LUT 和许可、颗粒板、目录 JSON |
+| 资源 | `AngieFilter/Resources/` | 胶片 LUT 和许可、富士官方 LUT、颗粒板、目录 JSON |
 
 ## 一帧怎么走
 
@@ -118,7 +118,7 @@ flowchart TB
 | 方案 | 资源 | 目录 |
 | --- | --- | --- |
 | `none` | 无 | 原图 |
-| `lut` | `FilmLUTs/film-<id>.png` | `Looks.json`（由导入脚本写） |
+| `lut` | `FilmLUTs/film-<id>.png` 或 `FujiLUTs/fuji-<机型>-<模拟>.png` | `Looks.json`（由导入脚本写） |
 | `builtIn` | 无 | `Looks.json` |
 
 `LookFinish` 是目录里的褪色、光晕、颗粒、颗粒板和暗角默认值。`LookAdjustment.baseline` 从它和 `Look.strength` 得出第一次套上时的调节。所有非原图款的面板都是强度、褪色、颗粒、暗角，`Look.showsHalation` 为真时多一根光晕。
