@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AngieFilter 交互稿</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #141414;
+    --panel: #1c1c1c;
+    --line: rgba(255,255,255,.12);
+    --muted: rgba(255,255,255,.62);
+    --text: #f5f5f5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    display: grid;
+    grid-template-columns: minmax(420px, 1fr) 380px;
+    gap: 28px;
+    align-items: center;
+    justify-items: center;
+    padding: 32px 28px;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { background: none; border: 0; padding: 0; cursor: pointer; }
+
+  .stage-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: #000;
+    border-radius: 48px;
+    border: 10px solid #2a2a2a;
+    box-shadow: 0 30px 80px rgba(0,0,0,.45);
+    position: relative;
+    overflow: hidden;
+  }
+  .island {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 118px;
+    height: 34px;
+    background: #000;
+    border-radius: 20px;
+    z-index: 5;
+  }
+  .view { position: absolute; inset: 0; display: flex; flex-direction: column; background: #000; }
+  .view[hidden] { display: none; }
+
+  .topbar {
+    height: 96px;
+    padding: 52px 18px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    z-index: 3;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+  }
+  .icon-btn:active { transform: scale(.94); }
+  .icon-btn:disabled { opacity: .28; cursor: default; }
+  .aspect-btn {
+    min-width: 52px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 16px;
+    border: 1.5px solid rgba(255,255,255,.85);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+
+  .finder {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    position: relative;
+  }
+  .frame {
+    position: relative;
+    overflow: hidden;
+    background: #111;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .stack { position: absolute; inset: 0; }
+  .art {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 200%;
+    height: 200%;
+    transform: translate(-50%, -50%) scale(var(--zoom, 1));
+    transform-origin: center;
+    background:
+      radial-gradient(circle at 24% 20%, rgba(255, 232, 170, .95) 0 34px, transparent 36px),
+      radial-gradient(circle at 68% 58%, #f0c2a4 0 46px, transparent 48px),
+      radial-gradient(circle at 76% 76%, #d23b32 0 34px, transparent 36px),
+      linear-gradient(#d7a27a, #d7a27a) 60% 52% / 70px 120px no-repeat,
+      linear-gradient(#2f6a38, #2f6a38) 10% 68% / 120px 90px no-repeat,
+      linear-gradient(#3d7a44, #3d7a44) 78% 64% / 90px 110px no-repeat,
+      linear-gradient(180deg, #67a4dc 0 46%, #9ec0df 46% 54%, #6d8d48 54% 72%, #8a6246 72% 100%);
+  }
+  .art.mirror { transform: translate(-50%, -50%) scale(var(--zoom, 1)) scaleX(-1); }
+  .graded { opacity: var(--mix, 1); filter: var(--grade, none); }
+  .grain {
+    position: absolute;
+    inset: -20%;
+    pointer-events: none;
+    opacity: var(--grain, 0);
+    mix-blend-mode: overlay;
+    background-image: radial-gradient(rgba(255,255,255,.55) .6px, transparent .7px);
+    background-size: 3px 3px;
+  }
+  .vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: var(--vignette, 0);
+    background: radial-gradient(circle, transparent 52%, rgba(0,0,0,.55) 100%);
+  }
+  .focus {
+    position: absolute;
+    width: 72px;
+    height: 72px;
+    border: 1.5px solid #ffe14a;
+    border-radius: 2px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    animation: focus .9s ease forwards;
+  }
+  @keyframes focus { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+  .zoom-hud {
+    position: absolute;
+    left: 50%;
+    top: 18px;
+    transform: translateX(-50%);
+    font-size: 15px;
+    font-weight: 600;
+    text-shadow: 0 1px 4px rgba(0,0,0,.6);
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .zoom-hud.show { opacity: 1; }
+
+  .dock {
+    padding: 8px 0 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 3;
+  }
+  .look-name { font-size: 13px; letter-spacing: .08em; color: rgba(255,255,255,.86); min-height: 16px; }
+  .intensity {
+    width: min(280px, 78%);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .intensity.open { display: flex; }
+  .intensity input { flex: 1; accent-color: #fff; }
+  .families {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 0 16px 2px;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+  .families::-webkit-scrollbar { display: none; }
+  .families button {
+    flex: 0 0 auto;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,.1);
+    font-size: 13px;
+    color: rgba(255,255,255,.75);
+  }
+  .families button.active { background: #fff; color: #111; font-weight: 600; }
+  .strip-wrap { width: 100%; overflow: hidden; }
+  .strip {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 4px 18px 2px;
+    scrollbar-width: none;
+  }
+  .strip::-webkit-scrollbar { display: none; }
+  .look {
+    flex: 0 0 auto;
+    width: 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255,255,255,.55);
+  }
+  .thumb {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.16);
+  }
+  .look.selected { color: #fff; }
+  .look.selected .thumb { box-shadow: 0 0 0 2px #fff; }
+  .thumb .art { width: 280%; height: 280%; }
+  .thumb-label { font-size: 10px; letter-spacing: .02em; line-height: 1.25; text-align: center; }
+  .zoom-row {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    z-index: 2;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-height: 28px;
+  }
+  .zoom-row button {
+    min-width: 36px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 14px;
+    background: rgba(0,0,0,.35);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .zoom-row button.active { background: #fff; color: #111; }
+  .filter-panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-panel[hidden] { display: none; }
+  .shutter-row {
+    width: 100%;
+    height: 96px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 22px;
+  }
+  .applied {
+    justify-self: start;
+    max-width: 96px;
+    font-size: 13px;
+    color: rgba(255,255,255,.86);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .filter-btn {
+    justify-self: end;
+    min-width: 64px;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 18px;
+    background: rgba(255,255,255,.18);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .filter-btn.open,
+  .filter-btn.on { background: #fff; color: #111; }
+  .shutter {
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 4px solid #fff;
+    display: grid;
+    place-items: center;
+  }
+  .shutter i {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: #fff;
+    display: block;
+  }
+  .shutter:active { transform: scale(.94); }
+  .shutter:active i { transform: scale(.92); }
+
+  .review-photo { flex: 1; min-height: 0; display: grid; place-items: center; }
+  .review-bar {
+    height: 118px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 36px 24px;
+  }
+  .text-btn { font-size: 17px; color: #fff; }
+  .save-btn {
+    height: 44px;
+    padding: 0 22px;
+    border-radius: 22px;
+    background: #fff;
+    color: #111;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .save-btn:disabled { opacity: .55; }
+
+  .denied {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 32px;
+    text-align: center;
+  }
+  .denied h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; }
+  .denied p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+  .primary {
+    margin-top: 12px;
+    height: 44px;
+    padding: 0 18px;
+    border-radius: 22px;
+    background: #fff;
+    color: #111;
+    font-weight: 600;
+  }
+
+  .notes { width: 100%; max-width: 380px; }
+  .notes h1 { font-size: 22px; font-weight: 650; margin: 0 0 6px; letter-spacing: -.02em; }
+  .notes .lead { margin: 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px 14px 12px;
+    margin-bottom: 12px;
+  }
+  .card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .04em; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .node {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .node.active { background: #fff; color: #111; border-color: #fff; }
+  .arrow { color: var(--muted); font-size: 12px; }
+  .now { font-size: 15px; line-height: 1.55; margin: 0; }
+  .hints { margin: 0; padding-left: 18px; color: rgba(255,255,255,.84); font-size: 14px; line-height: 1.7; }
+  .caption { text-align: center; color: var(--muted); font-size: 12px; }
+
+  @media (max-width: 860px) {
+    body { grid-template-columns: 1fr; padding: 16px; }
+    .phone { transform: scale(.86); transform-origin: top center; margin-bottom: -110px; }
+  }
+</style>
+</head>
+<body>
+  <div class="stage-wrap">
+    <div class="phone" id="phone">
+      <div class="island"></div>
+
+      <section class="view" id="view-camera">
+        <header class="topbar">
+          <button class="icon-btn" id="flash" data-action="flash" aria-label="闪光灯">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+          </button>
+          <button class="aspect-btn" id="aspect" data-action="aspect">4:3</button>
+          <button class="icon-btn" id="flip" data-action="flip" aria-label="翻转摄像头">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8a8 8 0 0 1 14-2M20 16a8 8 0 0 1-14 2"/><path d="M18 2v4h-4M6 22v-4h4"/></svg>
+          </button>
+        </header>
+        <div class="finder" id="finder">
+          <div class="frame" id="frame">
+            <div class="stack" id="stack">
+              <div class="art"></div>
+              <div class="art graded" id="graded"></div>
+              <div class="grain" id="grain"></div>
+              <div class="vignette" id="vignette"></div>
+            </div>
+            <div class="zoom-hud" id="zoom-hud">1×</div>
+            <div class="zoom-row" id="zoom-row"></div>
+          </div>
+        </div>
+        <footer class="dock">
+          <div class="filter-panel" id="filter-panel" hidden>
+            <div class="look-name" id="look-name">原图</div>
+            <div class="intensity" id="intensity">
+              <span>强度</span>
+              <input id="intensity-range" type="range" min="0" max="100" value="100">
+              <span id="intensity-value">100</span>
+            </div>
+            <div class="strip-wrap"><div class="strip" id="strip"></div></div>
+          </div>
+          <div class="shutter-row">
+            <div class="applied" id="applied"></div>
+            <button class="shutter" data-action="shutter" aria-label="快门"><i></i></button>
+            <button class="filter-btn" id="filter-toggle" data-action="filters" aria-pressed="false">滤镜</button>
+          </div>
+        </footer>
+      </section>
+
+      <section class="view" id="view-review" hidden>
+        <div class="review-photo" id="review-photo"></div>
+        <footer class="review-bar">
+          <button class="text-btn" data-action="retake">重拍</button>
+          <button class="save-btn" id="save" data-action="save">保存</button>
+        </footer>
+      </section>
+
+      <section class="view" id="view-denied" hidden>
+        <div class="denied">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          <h2>需要相机权限</h2>
+          <p>AngieFilter 只用相机取景和拍摄。可以在设置里打开权限。</p>
+          <button class="primary" data-action="settings">前往设置</button>
+          <button class="text-btn" data-action="back-camera">返回取景</button>
+        </div>
+      </section>
+    </div>
+    <div class="caption">滤镜默认收起。点右下角「滤镜」展开，再点一次或点画面收回。</div>
+  </div>
+
+  <aside class="notes">
+    <h1>AngieFilter 交互</h1>
+    <p class="lead">取景默认尽量大。滤镜收在右下角按钮里，徕卡、富士和其余风格在同一排，都能看到当前画面的预览。</p>
+    <div class="card">
+      <h2>路径</h2>
+      <div class="flow">
+        <button class="node active" data-jump="camera" id="node-camera">取景</button>
+        <span class="arrow">快门</span>
+        <button class="node" data-jump="review" id="node-review">确认</button>
+        <span class="arrow">保存</span>
+        <button class="node" data-jump="camera" id="node-done">回到取景</button>
+      </div>
+      <div class="flow" style="margin-top:8px">
+        <span class="arrow">确认页也可以</span>
+        <button class="node" data-jump="camera">重拍</button>
+        <span class="arrow">或</span>
+        <button class="node" data-jump="denied">无相机权限</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>刚才发生了什么</h2>
+      <p class="now" id="now">取景页尽量留给画面。点右下角「滤镜」才展开滤镜，徕卡、富士和其余风格在同一排。</p>
+    </div>
+    <div class="card">
+      <h2>这一屏可以做</h2>
+      <ul class="hints" id="hints"></ul>
+    </div>
+  </aside>
+
+<script>
+function stock(id, name, grade, grain, vignette, about) {
+  return { id, name, grade, grain, vignette, about };
+}
+const plain = stock("original", "原图", "none", 0, 0, "不套风格。");
+
+const catalog = [
+  { id: "leica", name: "徕卡", looks: [
+    plain,
+    stock("natural", "自然", "contrast(1.06) saturate(1.08) sepia(0.12) brightness(1.03)", 0.05, 0, "现代徕卡数码色彩。略暖，肤色稳，微对比明显。"),
+    stock("classic", "经典", "contrast(0.98) saturate(1.14) sepia(0.28) brightness(1.04)", 0.12, 0.25, "胶片时代的 M 型色彩。红色更厚，高光更早滚落。"),
+    stock("bright", "鲜明", "contrast(1.2) saturate(1.08) brightness(0.98)", 0, 0, "对比更高，黑色更实，色彩仍然自然。"),
+    stock("mono", "单色", "grayscale(1) contrast(1.22) brightness(1.03)", 0.22, 0.15, "黑白，阴影有层次，细颗粒。")
+  ]},
+  { id: "fuji", name: "富士", looks: [
+    plain,
+    stock("standard", "标准", "contrast(1.05) saturate(1.08)", 0.04, 0, "Provia。中性参照。"),
+    stock("vivid", "鲜艳", "saturate(1.7) contrast(1.12) hue-rotate(-8deg)", 0.04, 0, "Velvia。风景向，绿和红分开。"),
+    stock("soft", "柔和", "saturate(0.8) contrast(0.9) brightness(1.07) sepia(0.08)", 0.06, 0, "Astia。人像优先，对比低。"),
+    stock("chrome", "经典铬黄", "saturate(0.58) contrast(1.18) sepia(0.16) brightness(0.96)", 0.1, 0.12, "Classic Chrome。饱和低，暗部更硬。"),
+    stock("neg", "经典负片", "sepia(0.25) saturate(0.92) contrast(1.06) hue-rotate(-10deg)", 0.28, 0.35, "Classic Neg。暖阴影，冷高光。"),
+    stock("nostalgia", "怀旧负片", "sepia(0.4) saturate(1.2) contrast(0.94) brightness(1.06)", 0.24, 0.3, "Nostalgic Neg。琥珀色。"),
+    stock("real", "真实", "contrast(1.16) saturate(1.02) brightness(0.98)", 0.05, 0, "Reala Ace。色彩中性，影调更硬。"),
+    stock("cinema", "电影", "saturate(0.68) contrast(0.84) brightness(1.08)", 0.08, 0.2, "Eterna。低对比，高光留得住。"),
+    stock("bleach", "漂白", "saturate(0.4) contrast(1.32) brightness(1.02)", 0.16, 0.18, "Eterna Bleach Bypass。对比高，颜色抽掉。"),
+    stock("portrait", "人像", "saturate(0.75) contrast(0.98) sepia(0.14) brightness(1.05)", 0.08, 0, "Pro Neg. Std。肤色干净，饱和低。"),
+    stock("portrait-hi", "人像高", "saturate(0.78) contrast(1.1) sepia(0.12) brightness(1.02)", 0.08, 0, "Pro Neg. Hi。人像肤色，对比更高。"),
+    stock("acros", "黑白", "grayscale(1) contrast(1.1) brightness(1.05)", 0.4, 0.12, "Acros。阴影有细节，颗粒更像胶片。"),
+    stock("pro400h", "400H", "saturate(0.78) contrast(0.88) sepia(0.12) brightness(1.08)", 0.14, 0.16, "Pro 400H。粉彩，肤色软，已停产但预设里最常见。"),
+    stock("superia", "超级丽爱", "saturate(1.12) hue-rotate(12deg) contrast(1.06) sepia(0.08)", 0.22, 0.1, "Superia 400。消费负片，绿色更明显。")
+  ]},
+  { id: "kodak", name: "柯达", looks: [
+    plain,
+    stock("portra160", "肖像 160", "contrast(0.9) saturate(0.92) sepia(0.1) brightness(1.07)", 0.08, 0.08, "Portra 160。颗粒最细，肤色最柔。"),
+    stock("portra400", "肖像 400", "contrast(0.98) saturate(1.0) sepia(0.16) brightness(1.04)", 0.18, 0.1, "Portra 400。人像胶片里最常用的一款。"),
+    stock("portra800", "肖像 800", "contrast(0.94) saturate(0.88) sepia(0.22) brightness(1.05)", 0.34, 0.16, "Portra 800。更暖，颗粒更明显。"),
+    stock("gold", "金 200", "sepia(0.34) saturate(1.18) hue-rotate(-8deg) contrast(1.06) brightness(1.03)", 0.2, 0.18, "Gold 200。日光消费卷，偏金黄。"),
+    stock("ektar", "爱克塔", "saturate(1.7) contrast(1.2) hue-rotate(-6deg) brightness(0.98)", 0.04, 0, "Ektar 100。风景高彩，细颗粒，不优先肤色。"),
+    stock("ultramax", "日常 400", "saturate(1.28) contrast(1.14) sepia(0.2) brightness(1.02)", 0.3, 0.14, "Ultramax 400。对比高，颗粒粗，偏暖。"),
+    stock("colorplus", "彩色+", "saturate(0.86) sepia(0.18) hue-rotate(10deg) contrast(1.02)", 0.22, 0.12, "ColorPlus。更闷，略偏绿。"),
+    stock("kodachrome", "柯达克罗姆", "saturate(1.28) contrast(1.16) sepia(0.2) hue-rotate(-14deg)", 0.06, 0.08, "Kodachrome 64。反转片，红色密，对比实。"),
+    stock("ektachrome", "爱克塔克罗姆", "saturate(1.16) contrast(1.12) hue-rotate(16deg) brightness(1.03)", 0.05, 0, "Ektachrome。反转片，蓝色更冷。"),
+    stock("trix", "黑白 400", "grayscale(1) contrast(1.28) brightness(1.01)", 0.48, 0.12, "Tri-X 400。粗颗粒新闻黑白。"),
+    stock("tmax", "黑白细", "grayscale(1) contrast(1.08) brightness(1.04)", 0.08, 0, "T-Max 100。颗粒细，影调平滑。")
+  ]},
+  { id: "cinema", name: "电影", looks: [
+    plain,
+    stock("cs800t", "800T", "saturate(0.82) contrast(1.08) hue-rotate(22deg) brightness(0.96) sepia(0.06)", 0.32, 0.22, "Cinestill 800T。钨丝灯光，偏青，高光周围有红晕。"),
+    stock("cs50d", "50D", "saturate(1.06) contrast(1.02) sepia(0.08) brightness(1.04)", 0.06, 0.06, "Cinestill 50D。日光电影卷，干净，略暖。"),
+    stock("cs400d", "400D", "saturate(1.02) contrast(1.04) sepia(0.12) brightness(1.03)", 0.16, 0.1, "Cinestill 400D。日光，颗粒介于 50D 和 800T 之间。"),
+    stock("v250d", "日光 250", "saturate(1.08) contrast(1.05) sepia(0.06) brightness(1.02)", 0.08, 0, "Vision3 250D。电影日光底片，肤色自然。"),
+    stock("v500t", "灯光 500", "saturate(0.92) contrast(1.06) hue-rotate(14deg) brightness(0.98)", 0.14, 0.12, "Vision3 500T。钨丝灯电影底片，比 800T 更干净。")
+  ]},
+  { id: "ricoh", name: "理光", looks: [
+    plain,
+    stock("positive", "正片", "contrast(1.18) saturate(1.14) hue-rotate(8deg) brightness(0.99)", 0, 0, "GR 正片。街拍直出，略偏青，对比清楚。"),
+    stock("negative", "负片", "contrast(0.94) saturate(0.96) sepia(0.12) brightness(1.05)", 0.1, 0.08, "GR 负片。更软，略暖。"),
+    stock("hibw", "高对比黑白", "grayscale(1) contrast(1.4) brightness(0.98)", 0.16, 0.2, "GR 高对比黑白。黑白两极更开。")
+  ]},
+  { id: "hasselblad", name: "哈苏", looks: [
+    plain,
+    stock("hncs", "自然色", "contrast(1.03) saturate(1.05) brightness(1.01)", 0, 0, "Natural Color Solution。干净、准确，几乎不加风格。")
+  ]},
+  { id: "ilford", name: "依尔福", looks: [
+    plain,
+    stock("hp5", "HP5", "grayscale(1) contrast(1.18) brightness(1.02)", 0.4, 0.1, "HP5 Plus。经典颗粒，宽容度高。"),
+    stock("delta", "德尔塔", "grayscale(1) contrast(1.06) brightness(1.03)", 0.06, 0, "Delta 100。颗粒细，影调平。"),
+    stock("fp4", "FP4", "grayscale(1) contrast(1.12) brightness(1.01)", 0.2, 0.08, "FP4 Plus。传统黑白，颗粒中等。"),
+    stock("xp2", "XP2", "grayscale(1) contrast(1.02) brightness(1.07)", 0.1, 0, "XP2。彩色工艺的黑白，颗粒更润。")
+  ]},
+  { id: "polaroid", name: "宝丽来", looks: [
+    plain,
+    stock("sx70", "SX-70", "sepia(0.3) contrast(0.84) saturate(0.88) brightness(1.1)", 0.22, 0.5, "SX-70。褪色、偏暖、对比低，四角更暗。"),
+    stock("p600", "600", "sepia(0.22) contrast(1.06) saturate(1.08) brightness(1.04)", 0.2, 0.32, "600。比 SX-70 更实，颜色更跳。")
+  ]},
+  { id: "digital", name: "数码", looks: [
+    plain,
+    stock("canon", "佳能", "sepia(0.1) contrast(1.08) saturate(1.08) brightness(1.02)", 0, 0, "佳能直出。略暖，肤色偏红，对比清楚。"),
+    stock("nikon", "尼康", "saturate(1.32) contrast(1.12) hue-rotate(-4deg)", 0, 0, "尼康鲜艳。绿和蓝更开。"),
+    stock("sony", "索尼", "hue-rotate(6deg) contrast(1.04) saturate(1.0) brightness(1.01)", 0, 0, "索尼直出。偏中性，略冷。")
+  ]}
+];
+
+const state = {
+  screen: "camera",
+  filtersOpen: false,
+  lookId: "original",
+  intensity: 100,
+  intensityOpen: false,
+  aspect: "4:3",
+  flash: "off",
+  facing: "back",
+  zoom: 1
+};
+
+const hints = {
+  camera: [
+    "点画面对焦",
+    "点右下角「滤镜」展开面板，再点一次或点画面收回",
+    "徕卡、富士和其余风格在同一排，缩略图都是当前画面",
+    "点滤镜立即套用；再点一次已选滤镜才出现强度",
+    "点 0.5、1、2 变焦，或在画面上滚动滚轮",
+    "点中间的比例，在 4:3、16:9、1:1 之间切换",
+    "闪光灯只在后置可用，按 关、开、自动 循环",
+    "点快门进入确认，不再进入编辑"
+  ],
+  review: [
+    "这一张就是刚才取景里看到的画面",
+    "重拍回到取景，风格和变焦都还在",
+    "保存写入相册，然后回到取景"
+  ],
+  denied: [
+    "说明为什么需要相机",
+    "前往设置只做跳转，不在应用里再讲一遍权限原理"
+  ]
+};
+
+const $ = (id) => document.getElementById(id);
+let zoomTimer = 0;
+
+const filters = [plain];
+{
+  const seen = new Set(["original"]);
+  for (const family of catalog) {
+    for (const look of family.looks) {
+      if (seen.has(look.id)) continue;
+      seen.add(look.id);
+      filters.push(look);
+    }
+  }
+}
+function currentList() { return filters; }
+function currentLook() {
+  return currentList().find((look) => look.id === state.lookId) || currentList()[0];
+}
+function zoomStops() { return state.facing === "back" ? [0.5, 1, 2] : [1]; }
+
+function explain(text) { $("now").textContent = text; }
+
+function showScreen(screen) {
+  state.screen = screen;
+  $("view-camera").hidden = screen !== "camera";
+  $("view-review").hidden = screen !== "review";
+  $("view-denied").hidden = screen !== "denied";
+  $("node-camera").classList.toggle("active", screen === "camera");
+  $("node-review").classList.toggle("active", screen === "review");
+  $("hints").innerHTML = hints[screen].map((item) => `<li>${item}</li>`).join("");
+  if (screen === "review") paintReview();
+  if (screen === "camera") layoutFrame();
+}
+
+function applyGrade(root, look, intensity) {
+  const mix = look.id === "original" ? 0 : intensity / 100;
+  root.style.setProperty("--grade", look.grade);
+  root.style.setProperty("--mix", String(mix));
+  root.style.setProperty("--grain", String(look.grain * mix));
+  root.style.setProperty("--vignette", String(look.vignette * mix));
+  root.style.setProperty("--zoom", String(state.zoom));
+  root.querySelectorAll(".art").forEach((art) => art.classList.toggle("mirror", state.facing === "front"));
+}
+
+function renderLook() {
+  const look = currentLook();
+  $("look-name").textContent = look.name;
+  $("intensity").classList.toggle("open", state.intensityOpen && look.id !== "original");
+  $("intensity-range").value = String(state.intensity);
+  $("intensity-value").textContent = String(state.intensity);
+  applyGrade($("stack"), look, state.intensity);
+  document.querySelectorAll(".look").forEach((node) => {
+    node.classList.toggle("selected", node.dataset.id === look.id);
+  });
+  $("filter-panel").hidden = !state.filtersOpen;
+  $("filter-toggle").classList.toggle("open", state.filtersOpen);
+  $("filter-toggle").classList.toggle("on", look.id !== "original" && !state.filtersOpen);
+  $("filter-toggle").setAttribute("aria-pressed", String(state.filtersOpen));
+  $("applied").textContent = !state.filtersOpen && look.id !== "original" ? look.name : "";
+}
+
+function renderStrip() {
+  const strip = $("strip");
+  strip.innerHTML = currentList().map((look) => `
+    <button class="look" data-action="look" data-id="${look.id}">
+      <span class="thumb"><span class="art graded" style="--grade:${look.grade};--mix:${look.id === "original" ? 0 : 1};--zoom:1"></span></span>
+      <span class="thumb-label">${look.name}</span>
+    </button>
+  `).join("");
+  renderLook();
+  const selected = strip.querySelector(".look.selected");
+  if (selected) selected.scrollIntoView({ inline: "center", block: "nearest" });
+}
+
+function renderZoom() {
+  const stops = zoomStops();
+  if (state.facing === "front") state.zoom = 1;
+  $("zoom-row").innerHTML = stops.map((stop) => {
+    const active = Math.abs(state.zoom - stop) < 0.05;
+    return `<button data-action="zoom" data-zoom="${stop}" class="${active ? "active" : ""}">${stop}</button>`;
+  }).join("");
+  $("zoom-hud").textContent = `${trimZoom(state.zoom)}×`;
+  $("stack").style.setProperty("--zoom", String(state.zoom));
+}
+
+function trimZoom(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function renderChrome() {
+  $("aspect").textContent = state.aspect;
+  $("flash").disabled = state.facing === "front";
+  $("flash").style.opacity = state.flash === "off" || state.facing === "front" ? .55 : 1;
+  const flashTitle = { off: "闪光灯关", on: "闪光灯开", auto: "闪光灯自动" };
+  $("flash").setAttribute("aria-label", state.facing === "front" ? "前置没有闪光灯" : flashTitle[state.flash]);
+}
+
+function layoutFrame() {
+  const finder = $("finder");
+  const frame = $("frame");
+  if (!finder || !frame) return;
+  const ratio = { "4:3": 3 / 4, "16:9": 16 / 9, "1:1": 1 }[state.aspect];
+  let width = finder.clientWidth;
+  let height = width / ratio;
+  if (height > finder.clientHeight) {
+    height = finder.clientHeight;
+    width = height * ratio;
+  }
+  frame.style.width = `${width}px`;
+  frame.style.height = `${height}px`;
+}
+
+function paintReview() {
+  const look = currentLook();
+  $("review-photo").innerHTML = `
+    <div class="frame" id="review-frame">
+      <div class="stack" id="review-stack">
+        <div class="art"></div>
+        <div class="art graded"></div>
+        <div class="grain"></div>
+        <div class="vignette"></div>
+      </div>
+    </div>`;
+  const host = $("review-photo");
+  const frame = $("review-frame");
+  const ratio = { "4:3": 3 / 4, "16:9": 16 / 9, "1:1": 1 }[state.aspect];
+  let width = host.clientWidth || 370;
+  let height = width / ratio;
+  const limit = host.clientHeight || 700;
+  if (height > limit) {
+    height = limit;
+    width = height * ratio;
+  }
+  frame.style.width = `${width}px`;
+  frame.style.height = `${height}px`;
+  applyGrade($("review-stack"), look, state.intensity);
+}
+
+function flashOverlay() {
+  if (state.facing !== "back" || state.flash === "off") return;
+  const veil = document.createElement("div");
+  veil.style.cssText = "position:absolute;inset:0;background:#fff;z-index:4;pointer-events:none";
+  $("view-camera").appendChild(veil);
+  requestAnimationFrame(() => {
+    veil.style.transition = "opacity .18s";
+    veil.style.opacity = "0";
+  });
+  setTimeout(() => veil.remove(), 200);
+}
+
+function onLook(id) {
+  const look = currentList().find((item) => item.id === id);
+  if (!look) return;
+  if (state.lookId === id && id !== "original") {
+    state.intensityOpen = !state.intensityOpen;
+    explain(state.intensityOpen ? `再次点了「${look.name}」，强度条出现。拖动它会在原图和这款风格之间混合。` : "强度条收起。风格仍然留在画面上。");
+  } else {
+    state.lookId = id;
+    state.intensityOpen = false;
+    if (id !== "original") state.intensity = 100;
+    explain(id === "original"
+      ? "回到原图。原图没有强度。"
+      : `已套用「${look.name}」。${look.about}再点一次可以调强度。`);
+  }
+  renderLook();
+}
+
+$("phone").addEventListener("click", (event) => {
+  const target = event.target.closest("[data-action]");
+  if (!target || target.disabled) return;
+  const action = target.dataset.action;
+  if (action === "filters") {
+    state.filtersOpen = !state.filtersOpen;
+    if (!state.filtersOpen) state.intensityOpen = false;
+    renderLook();
+    requestAnimationFrame(layoutFrame);
+    if (state.filtersOpen) {
+      const selected = document.querySelector(".look.selected");
+      if (selected) selected.scrollIntoView({ inline: "center", block: "nearest" });
+      explain("滤镜面板打开。左右滑动，每张缩略图都是当前画面的预览。");
+    } else {
+      explain("滤镜面板收起，取景区域恢复。");
+    }
+  } else if (action === "look") {
+    onLook(target.dataset.id);
+  } else if (action === "zoom") {
+    state.zoom = Number(target.dataset.zoom);
+    renderZoom();
+    renderLook();
+    explain(`变焦到 ${trimZoom(state.zoom)}×。这是镜头倍数，不是把照片放大裁切。`);
+  } else if (action === "aspect") {
+    const order = ["4:3", "16:9", "1:1"];
+    state.aspect = order[(order.indexOf(state.aspect) + 1) % order.length];
+    renderChrome();
+    layoutFrame();
+    explain(`画幅改为 ${state.aspect}。黑边以外的部分不会进入成片。`);
+  } else if (action === "flash") {
+    const order = ["off", "on", "auto"];
+    state.flash = order[(order.indexOf(state.flash) + 1) % order.length];
+    renderChrome();
+    const label = { off: "关闭", on: "打开", auto: "自动" };
+    explain(`闪光灯${label[state.flash]}。前置摄像头没有这一项。`);
+  } else if (action === "flip") {
+    state.facing = state.facing === "back" ? "front" : "back";
+    if (state.facing === "front") state.zoom = 1;
+    renderZoom();
+    renderChrome();
+    renderLook();
+    explain(state.facing === "front" ? "切到前置。画面镜像，变焦只保留 1×，闪光灯不可用。保存时也会保持这个镜像。" : "切回后置。变焦档位恢复。");
+  } else if (action === "shutter") {
+    flashOverlay();
+    showScreen("review");
+    explain("快门拍下的就是取景里这一帧。确认页不再改风格。");
+  } else if (action === "retake") {
+    showScreen("camera");
+    explain("重拍。刚才的风格、画幅和变焦都还在。");
+  } else if (action === "save") {
+    const button = $("save");
+    button.disabled = true;
+    button.textContent = "保存中";
+    explain("正在写入相册。");
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = "保存";
+      showScreen("camera");
+      explain("已保存到最近项目，回到取景，可以继续拍下一张。");
+    }, 700);
+  } else if (action === "settings") {
+    explain("这里会离开应用，打开系统设置里的相机权限。");
+  } else if (action === "back-camera") {
+    showScreen("camera");
+    explain("回到取景。");
+  }
+});
+
+$("finder").addEventListener("click", (event) => {
+  if (event.target.closest("[data-action]")) return;
+  const frame = $("frame");
+  const rect = frame.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+  if (state.filtersOpen) {
+    state.filtersOpen = false;
+    state.intensityOpen = false;
+    renderLook();
+    requestAnimationFrame(layoutFrame);
+  }
+  frame.querySelectorAll(".focus").forEach((node) => node.remove());
+  const mark = document.createElement("div");
+  mark.className = "focus";
+  mark.style.left = `${x}px`;
+  mark.style.top = `${y}px`;
+  frame.appendChild(mark);
+  setTimeout(() => mark.remove(), 900);
+  explain("对焦到点击的位置。对焦框会自己消失。");
+});
+
+$("finder").addEventListener("wheel", (event) => {
+  if (state.screen !== "camera" || state.facing === "front") return;
+  event.preventDefault();
+  const next = Math.min(5, Math.max(0.5, state.zoom + (event.deltaY > 0 ? -0.1 : 0.1)));
+  state.zoom = Math.round(next * 10) / 10;
+  renderZoom();
+  renderLook();
+  $("zoom-hud").classList.add("show");
+  clearTimeout(zoomTimer);
+  zoomTimer = setTimeout(() => $("zoom-hud").classList.remove("show"), 700);
+}, { passive: false });
+
+$("intensity-range").addEventListener("input", () => {
+  state.intensity = Number($("intensity-range").value);
+  $("intensity-value").textContent = String(state.intensity);
+  renderLook();
+  explain(`「${currentLook().name}」强度 ${state.intensity}。0 是原图，100 是完整风格。`);
+});
+
+document.querySelector(".notes").addEventListener("click", (event) => {
+  const jump = event.target.closest("[data-jump]");
+  if (!jump) return;
+  const screen = jump.dataset.jump;
+  showScreen(screen);
+  if (screen === "denied") explain("还没有相机权限。取景控件先不出现。");
+  if (screen === "review") explain("从路径图直接看确认页。");
+  if (screen === "camera") explain("回到取景。");
+});
+
+window.addEventListener("resize", () => {
+  if (state.screen === "camera") layoutFrame();
+  if (state.screen === "review") paintReview();
+});
+
+renderStrip();
+renderZoom();
+renderChrome();
+showScreen("camera");
+requestAnimationFrame(layoutFrame);
+</script>
+</body>
+</html>
