@@ -2,6 +2,12 @@ import AVFoundation
 import CoreImage
 import UIKit
 
+enum DualStartOutcome: Equatable {
+    case running
+    case waitingForAuthorization
+    case unavailable(String)
+}
+
 final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
     static var isSupported: Bool {
         AVCaptureMultiCamSession.isMultiCamSupported
@@ -28,12 +34,18 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let composeState = Locked((busy: false, again: false))
     private let pending = Locked<PendingCapture?>(nil)
     private let captureGeneration = Locked(0)
+    private let shotLanes = Locked<[Int64: ShotLane]>([:])
+    private let previewToken = Locked(0)
     private let captions = FrameCaptionCache()
     private let modelName = PhoneModelName.marketingName(for: DeviceMachine.identifier)
     private var backDevice: AVCaptureDevice?
     private var frontDevice: AVCaptureDevice?
     private var status = CameraStatus()
     private var isConfigured = false
+    /// Touched only on `sessionQueue`.
+    private var startID = 0
+    private var wantsRunning = false
+    private var activeStart: (id: Int, completion: (DualStartOutcome) -> Void)?
 
     init(previewView: PreviewMetalView) {
         self.previewView = previewView
@@ -43,6 +55,16 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             output.alwaysDiscardsLateVideoFrames = true
             output.setSampleBufferDelegate(self, queue: videoQueue)
         }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sessionRuntimeError),
+            name: .AVCaptureSessionRuntimeError,
+            object: session
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func updateRenderParameters(_ body: (inout RenderParameters) -> Void) {
@@ -60,18 +82,39 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
     }
 
-    func start(completion: @escaping (Bool) -> Void) {
+    func start(completion: @escaping (DualStartOutcome) -> Void) {
         sessionQueue.async { [weak self] in
-            let running = self?.configureAndStart() ?? false
+            guard let self else {
+                DispatchQueue.main.async {
+                    completion(.unavailable("这台设备不能同时打开前后镜头"))
+                }
+                return
+            }
+            self.startID += 1
+            let id = self.startID
+            self.wantsRunning = true
+            let outcome = self.beginStart(startID: id)
+            if case .waitingForAuthorization = outcome {
+                self.activeStart = (id, completion)
+            }
             DispatchQueue.main.async {
-                completion(running)
+                completion(outcome)
             }
         }
     }
 
     func stop(completion: (() -> Void)? = nil) {
         sessionQueue.async { [weak self] in
-            if let self, self.session.isRunning {
+            guard let self else {
+                if let completion {
+                    DispatchQueue.main.async(execute: completion)
+                }
+                return
+            }
+            self.startID += 1
+            self.wantsRunning = false
+            self.activeStart = nil
+            if self.session.isRunning {
                 self.session.stopRunning()
                 self.status.isRunning = false
                 self.publishStatus()
@@ -166,8 +209,8 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
                 return
             }
             let flash = self.avFlashMode(self.flashMode.with { $0 })
-            self.capture(self.backPhotoOutput, flash: flash)
-            self.capture(self.frontPhotoOutput, flash: .off)
+            self.capture(self.backPhotoOutput, flash: flash, generation: generation, facing: .back)
+            self.capture(self.frontPhotoOutput, flash: .off, generation: generation, facing: .front)
         }
     }
 
@@ -187,18 +230,21 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        let facing: CameraFacing = output === frontPhotoOutput ? .front : .back
-        let generation = captureGeneration.with { $0 }
+        guard output === backPhotoOutput || output === frontPhotoOutput else { return }
+        let request = shotLanes.with { lanes in
+            lanes.removeValue(forKey: photo.resolvedSettings.uniqueID)
+        }
+        guard let request else { return }
         if error != nil {
-            resolvePhoto(generation: generation, facing: facing, image: nil)
+            resolvePhoto(generation: request.generation, facing: request.facing, image: nil)
             return
         }
         guard let data = photo.fileDataRepresentation(), let source = CIImage(data: data) else {
-            resolvePhoto(generation: generation, facing: facing, image: nil)
+            resolvePhoto(generation: request.generation, facing: request.facing, image: nil)
             return
         }
-        let upright = FrameImageMaker.upright(from: source, orientation: .up, mirrorHorizontally: facing == .front)
-        resolvePhoto(generation: generation, facing: facing, image: upright)
+        let upright = FrameImageMaker.upright(from: source, orientation: .up, mirrorHorizontally: request.facing == .front)
+        resolvePhoto(generation: request.generation, facing: request.facing, image: upright)
     }
 
     private func expireCapture(_ generation: Int) {
@@ -207,8 +253,15 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             pending = nil
             return true
         }
+        forgetLanes(generation: generation)
         if expired {
             publishFailure("没有拿到两路照片")
+        }
+    }
+
+    private func forgetLanes(generation: Int) {
+        shotLanes.with { lanes in
+            lanes = lanes.filter { $0.value.generation != generation }
         }
     }
 
@@ -235,6 +288,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         case .ignored, .waiting:
             break
         case .failed:
+            forgetLanes(generation: generation)
             publishFailure("没有拿到两路照片")
         case .ready(let capture):
             photoQueue.async { [weak self] in
@@ -295,8 +349,9 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         let canvas = DualFrameComposer.previewCanvas(widthOverHeight: renderParameters.aspectRatio.widthOverHeight)
         let composed = DualFrameComposer.compose(back: back, front: front, settings: settings, canvas: canvas)
         let framed = framedImage(composed, parameters: renderParameters, synchronousCaption: false)
+        let token = previewToken.with { $0 }
         DispatchQueue.main.async { [weak self] in
-            self?.previewView.draw(image: framed)
+            self?.previewView.draw(image: framed, token: token)
             self?.finishCompose()
         }
     }
@@ -322,45 +377,85 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         return FrameImageMaker.graded(image, parameters: lane)
     }
 
-    private func configureAndStart() -> Bool {
+    private func beginStart(startID: Int) -> DualStartOutcome {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             status.authorization = .authorized
+            return openSession()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
                 self?.sessionQueue.async {
-                    self?.status.authorization = allowed ? .authorized : .denied
-                    if allowed {
-                        _ = self?.configureAndStart()
-                    } else {
-                        self?.publishStatus()
-                    }
+                    self?.finishAuthorization(allowed: allowed, startID: startID)
                 }
             }
-            return false
+            return .waitingForAuthorization
         default:
             status.authorization = .denied
             publishStatus()
-            return false
+            return .unavailable("需要相机权限才能同时打开前后镜头")
         }
+    }
 
+    private func finishAuthorization(allowed: Bool, startID: Int) {
+        guard wantsRunning, self.startID == startID else { return }
+        let outcome: DualStartOutcome
+        if allowed {
+            status.authorization = .authorized
+            outcome = openSession()
+        } else {
+            status.authorization = .denied
+            publishStatus()
+            outcome = .unavailable("需要相机权限才能同时打开前后镜头")
+        }
+        let completion = activeStart?.id == startID ? activeStart?.completion : nil
+        activeStart = nil
+        if let completion {
+            DispatchQueue.main.async {
+                completion(outcome)
+            }
+        }
+    }
+
+    /// Writes a multicam format every time. Another session may have changed the devices since the last start.
+    private func openSession() -> DualStartOutcome {
+        guard wantsRunning else {
+            return .unavailable("这台设备不能同时打开前后镜头")
+        }
         guard Self.isSupported else {
             publishFailure("这台设备不能同时打开前后镜头")
-            return false
+            return .unavailable("这台设备不能同时打开前后镜头")
         }
-        if !isConfigured {
-            guard configure() else { return false }
+        guard configure() else {
+            return .unavailable("这台设备不能同时打开前后镜头")
         }
+        previewToken.with { $0 = previewView.claimDrawer() }
         if !session.isRunning {
             session.startRunning()
         }
         status.isRunning = session.isRunning
         status.hasCamera = true
         publishStatus()
-        return session.isRunning
+        if session.isRunning {
+            return .running
+        }
+        publishFailure("这台设备不能同时打开前后镜头")
+        return .unavailable("这台设备不能同时打开前后镜头")
+    }
+
+    @objc private func sessionRuntimeError(_ notification: Notification) {
+        let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError
+        sessionQueue.async { [weak self] in
+            guard let self, self.wantsRunning else { return }
+            if error?.code == .mediaServicesWereReset {
+                _ = self.openSession()
+                return
+            }
+            self.publishFailure("双摄中断了")
+        }
     }
 
     private func configure() -> Bool {
+        isConfigured = false
         guard let pair = Self.devicePair() else {
             status.hasCamera = false
             publishFailure("这台设备不能同时打开前后镜头")
@@ -448,8 +543,14 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
     }
 
-    private func capture(_ output: AVCapturePhotoOutput, flash: AVCaptureDevice.FlashMode) {
+    private func capture(
+        _ output: AVCapturePhotoOutput,
+        flash: AVCaptureDevice.FlashMode,
+        generation: Int,
+        facing: CameraFacing
+    ) {
         let settings = AVCapturePhotoSettings()
+        shotLanes.with { $0[settings.uniqueID] = ShotLane(generation: generation, facing: facing) }
         if output.supportedFlashModes.contains(flash) {
             settings.flashMode = flash
         }
@@ -574,6 +675,11 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             return left.height < right.height
         }
     }
+}
+
+private struct ShotLane {
+    var generation: Int
+    var facing: CameraFacing
 }
 
 private struct PendingCapture {

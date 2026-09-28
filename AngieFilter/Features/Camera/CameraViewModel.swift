@@ -128,6 +128,7 @@ final class CameraViewModel: ObservableObject {
     func cycleFlash() {
         guard flashAvailable else { return }
         let next = status.flashMode.next()
+        status.flashMode = next
         if dualOn {
             dualSession.setFlash(next)
         } else {
@@ -149,15 +150,7 @@ final class CameraViewModel: ObservableObject {
         dualTransition = true
         if dualOn {
             rememberDualLook()
-            dualSession.stop { [weak self] in
-                guard let self else { return }
-                self.dualOn = false
-                self.restoreSingleLook()
-                self.session.start()
-                self.syncParameters()
-                self.dualTransition = false
-                if self.filtersOpen { self.refreshThumbnails() }
-            }
+            leaveDual(message: nil)
         } else {
             rememberSingleLook()
             applyDualLook()
@@ -167,19 +160,41 @@ final class CameraViewModel: ObservableObject {
             syncParameters()
             session.stop { [weak self] in
                 guard let self else { return }
-                self.dualSession.start { [weak self] running in
+                self.dualSession.start { [weak self] outcome in
                     guard let self else { return }
-                    if !running {
-                        self.dualOn = false
-                        self.restoreSingleLook()
-                        self.session.start()
-                        self.banner = "这台设备不能同时打开前后镜头"
+                    switch outcome {
+                    case .running:
+                        guard self.dualOn else { return }
+                        self.syncParameters()
+                        self.dualTransition = false
+                        if self.filtersOpen { self.refreshThumbnails() }
+                    case .waitingForAuthorization:
+                        guard self.dualOn else { return }
+                        self.dualTransition = false
+                    case .unavailable(let message):
+                        self.leaveDual(message: message)
                     }
-                    self.syncParameters()
-                    self.dualTransition = false
-                    if self.filtersOpen { self.refreshThumbnails() }
                 }
             }
+        }
+    }
+
+    private func leaveDual(message: String?) {
+        guard dualOn else { return }
+        let flash = status.flashMode
+        dualOn = false
+        restoreSingleLook()
+        if let message {
+            banner = message
+        }
+        dualTransition = true
+        dualSession.stop { [weak self] in
+            guard let self else { return }
+            self.session.setFlash(flash)
+            self.session.start()
+            self.syncParameters()
+            self.dualTransition = false
+            if self.filtersOpen { self.refreshThumbnails() }
         }
     }
 

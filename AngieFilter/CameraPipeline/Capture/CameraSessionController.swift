@@ -22,6 +22,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private var device: AVCaptureDevice?
     private var isConfigured = false
     private let renderBusy = Locked(false)
+    private let previewToken = Locked(0)
     private let captions = FrameCaptionCache()
     private let modelName = PhoneModelName.marketingName(for: DeviceMachine.identifier)
     private let shutterDate = Locked("")
@@ -152,9 +153,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         latestSource.with { $0 = source }
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
+        let token = previewToken.with { $0 }
         let busyFlag = renderBusy
         DispatchQueue.main.async { [weak self] in
-            self?.previewView.draw(image: framed)
+            self?.previewView.draw(image: framed, token: token)
             busyFlag.with { $0 = false }
         }
     }
@@ -240,6 +242,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             configure(facing: .back)
         }
         if !session.isRunning {
+            previewToken.with { $0 = previewView.claimDrawer() }
             session.startRunning()
         }
         status.isRunning = session.isRunning

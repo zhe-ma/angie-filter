@@ -4,6 +4,8 @@ import MetalKit
 import UIKit
 
 final class PreviewMetalView: MTKView {
+    private let drawerLock = NSLock()
+    private var drawer = 0
     private var context: CIContext?
     private let commandQueue: MTLCommandQueue?
 
@@ -28,7 +30,20 @@ final class PreviewMetalView: MTKView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func draw(image: CIImage) {
+    /// Invalidates draws from a session that has handed the preview to the other one.
+    func claimDrawer() -> Int {
+        drawerLock.lock()
+        drawer += 1
+        let token = drawer
+        drawerLock.unlock()
+        return token
+    }
+
+    func draw(image: CIImage, token: Int) {
+        drawerLock.lock()
+        let current = drawer
+        drawerLock.unlock()
+        guard token == current else { return }
         guard bounds.width > 1, bounds.height > 1,
               let drawable = currentDrawable,
               let commandBuffer = commandQueue?.makeCommandBuffer(),
