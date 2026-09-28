@@ -22,6 +22,9 @@ struct CameraView: View {
         VStack(spacing: 0) {
             topBar
             preview
+            if model.frameOpen {
+                framePanel
+            }
             if model.filtersOpen {
                 filterPanel
             }
@@ -69,7 +72,7 @@ struct CameraView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                         .shadow(radius: 4)
-                        .padding(.top, 16)
+                        .padding(.top, 16 + model.photoRect(in: geometry.size).minY)
                         .frame(maxHeight: .infinity, alignment: .top)
                 }
                 if let point = model.focusPoint {
@@ -80,19 +83,22 @@ struct CameraView: View {
                 }
                 zoomRow
                     .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 12 + geometry.size.height - model.photoRect(in: geometry.size).maxY)
                 Color.clear
                     .contentShape(Rectangle())
                     .gesture(pinch)
                     .onTapGesture { location in
-                        if model.filtersOpen {
-                            model.closeFilters()
+                        let photo = model.photoRect(in: geometry.size)
+                        if model.filtersOpen || model.frameOpen {
+                            model.dismissPanels()
                         }
-                        model.focus(viewPoint: location, in: geometry.size)
+                        guard photo.contains(location) else { return }
+                        let local = CGPoint(x: location.x - photo.minX, y: location.y - photo.minY)
+                        model.focus(viewPoint: local, in: photo.size, displayPoint: location)
                     }
             }
         }
-        .aspectRatio(model.aspectRatio.widthOverHeight, contentMode: .fit)
+        .aspectRatio(model.previewWidthOverHeight, contentMode: .fit)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 8)
     }
@@ -110,6 +116,67 @@ struct CameraView: View {
                 .background(selected ? Color.white : Color.black.opacity(0.35), in: Capsule())
             }
         }
+    }
+
+    private var framePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                frameStyleButton("关闭", style: .off)
+                frameStyleButton("白边", style: .white)
+                frameStyleButton("白边带字", style: .captioned)
+            }
+            if model.frame.style == .captioned {
+                HStack(spacing: 16) {
+                    frameToggle("型号", on: model.frame.showsModel) { model.setShowsModel($0) }
+                    frameToggle("地点", on: model.frame.showsPlace) { model.setShowsPlace($0) }
+                    frameToggle("日期", on: model.frame.showsDate) { model.setShowsDate($0) }
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.84))
+                if model.placeMissing {
+                    Text("未获得位置")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                TextField("一行短句", text: Binding(
+                    get: { model.frame.customText },
+                    set: { model.setCustomText($0) }
+                ))
+                .submitLabel(.done)
+                .font(.system(size: 13))
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+
+    private func frameStyleButton(_ title: String, style: FrameStyle) -> some View {
+        let selected = model.frame.style == style
+        return Button(title) {
+            model.selectFrameStyle(style)
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 13, weight: selected ? .semibold : .regular))
+        .foregroundStyle(selected ? Color.black : Color.white)
+        .padding(.horizontal, 14)
+        .frame(height: 32)
+        .background(selected ? Color.white : Color.white.opacity(0.12), in: Capsule())
+    }
+
+    private func frameToggle(_ title: String, on: Bool, set: @escaping (Bool) -> Void) -> some View {
+        Button {
+            set(!on)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                Text(title)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var filterPanel: some View {
@@ -247,11 +314,23 @@ struct CameraView: View {
 
     private var shutterBar: some View {
         HStack {
-            Text(model.filtersOpen || model.selectedLook.isOriginal ? "" : model.selectedLook.name)
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.86))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Button(action: model.toggleFrame) {
+                    Text("相框")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(frameButtonOn ? Color.black : Color.white)
+                        .frame(minWidth: 64, minHeight: 36)
+                        .background(frameButtonOn ? Color.white : Color.white.opacity(0.18), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                if showAppliedName {
+                    Text(model.selectedLook.name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.86))
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: model.capture) {
                 Circle()
                     .stroke(Color.white, lineWidth: 4)
@@ -274,6 +353,14 @@ struct CameraView: View {
         }
         .padding(.horizontal, 22)
         .padding(.bottom, 12)
+    }
+
+    private var frameButtonOn: Bool {
+        model.frameOpen || model.frame.drawsBorder
+    }
+
+    private var showAppliedName: Bool {
+        !model.filtersOpen && !model.frameOpen && !model.selectedLook.isOriginal
     }
 
     private var permissionView: some View {

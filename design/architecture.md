@@ -93,12 +93,17 @@ flowchart TB
   spatial -->|LUT| mix["按强度溶回原图"]
   none --> mix
   rest --> mix
-  mix --> out["预览 MTKView / 确认页 UIImage / 缩略图"]
+  mix --> border{"相框打开?"}
+  border -->|否| out["预览 MTKView / 确认页 UIImage"]
+  border -->|是| frameOut["FrameCompositor 白边，带字时贴底栏"]
+  frameOut --> out
 ```
 
 `RenderParameters` 放在 `Locked` 里。`videoQueue` 取出一份值再渲染，不在预览队列里锁住 ViewModel。
 
-缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `preview`。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
+缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `preview`。缩略图不加相框。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
+
+相框在 `GradeApplicator` 之后。预览和成片共用 `FrameCompositor`。底栏字图在主线程生成，`videoQueue` 只贴图。细节在 [frame.md](frame.md)。
 
 ## 两种方案怎么并存
 
@@ -142,14 +147,18 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | 类型 | 文件 | 职责 |
 | --- | --- | --- |
 | `Look`、`GrainPlateKind` | `AngieFilter/Domain/Looks/Look.swift` | 风格数据。空间参数从 `LookGrade` 读出 |
+| `LookFinish` | `AngieFilter/Domain/Looks/LookFinish.swift` | 目录里的褪色、肩部、光晕、肤色 |
 | `LookGrade`、`ColorCubeGrade`、`LUTImageGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜用哪条渲染方案 |
 | `LookFamily` | `AngieFilter/Domain/Looks/LookFamily.swift` | 分类。成员仍是 `Look` |
 | `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 先读 `Looks.json`，再接上 `LUTLooks.json`。配方文件缺失时只返回原图 |
 | `AspectRatio`、`AspectCrop` | `AngieFilter/Domain/Capture/` | 画幅和转正之后的中心裁切 |
 | `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值 |
 | `RenderParameters`、`LookAdjustment`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照 |
+| `FrameStyle`、`FrameSettings`、`FrameLayout`、`FrameDateText` | `AngieFilter/Domain/Rendering/FrameSettings.swift` | 相框样式、外框尺寸、日期字符串 |
+| `PhoneModelName` | `AngieFilter/Domain/Rendering/PhoneModelName.swift` | 机型标识到营销名 |
+| `PlaceCaption` | `AngieFilter/Domain/Rendering/PlaceCaption.swift` | 城市和区拼成底栏地点 |
 
-`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。
+`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`frame`、`frameModelName`、`frameDate`、`framePlace`、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。
 
 ## CameraPipeline 类型
 
@@ -159,6 +168,9 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | `ZoomLadderBuilder` | `AngieFilter/CameraPipeline/Capture/ZoomLadderBuilder.swift` |
 | `FrameImageMaker` | `AngieFilter/CameraPipeline/Rendering/FrameImageMaker.swift` |
 | `GradeApplicator` | `AngieFilter/CameraPipeline/Rendering/GradeApplicator.swift` |
+| `FilmFinish` | `AngieFilter/CameraPipeline/Rendering/FilmFinish.swift` |
+| `FrameCompositor` | `AngieFilter/CameraPipeline/Rendering/FrameCompositor.swift` |
+| `FrameCaptionKey`、`FrameCaptionCache`、`FrameCaptionRenderer` | `AngieFilter/CameraPipeline/Rendering/FrameCaption.swift` |
 | `ColorCubeGrader` | `AngieFilter/CameraPipeline/Rendering/ColorCubeGrader.swift` |
 | `LUTImageGrader` | `AngieFilter/CameraPipeline/Rendering/LUTImageGrader.swift` |
 | `ColorCubeStore` | `AngieFilter/CameraPipeline/Rendering/ColorCubeStore.swift` |
@@ -167,6 +179,7 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | `PreviewMetalView` | `AngieFilter/CameraPipeline/Rendering/CoreImageFrameRenderer.swift` |
 | `PhotoLibraryStore`、`PhotoLibraryError` | `AngieFilter/CameraPipeline/Photos/PhotoLibraryStore.swift` |
 | `Locked` | `AngieFilter/CameraPipeline/Support/Locked.swift` |
+| `DeviceMachine` | `AngieFilter/CameraPipeline/Support/DeviceMachine.swift` |
 
 `CoreImageFrameRenderer.swift` 里的类型是 `PreviewMetalView`。
 
@@ -179,9 +192,9 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | `FilterStripView` | `AngieFilter/Features/Camera/FilterStripView.swift` |
 | `ReviewView` | `AngieFilter/Features/Review/ReviewView.swift` |
 
-`CameraViewModel` 在主线程。它保存当前 `lookID`、分类、调节草稿、已保存的调节、滤镜面板是否展开、确认页照片、保存中、对焦框、缩略图。设备状态由 `CameraStatus` 推上来。
+`CameraViewModel` 在主线程。它保存当前 `lookID`、分类、调节草稿、已保存的调节、滤镜面板和相框面板是否展开、`FrameSettings`、确认页照片、保存中、对焦框、缩略图。设备状态由 `CameraStatus` 推上来。相框选择只留在这次启动的内存里。地点由 `PlaceReader` 读，解析出的字符串放进 `framePlace`。
 
-ViewModel 发意图：变焦、切换风格、调节、快门、画幅、闪光灯、翻转。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。
+ViewModel 发意图：变焦、切换风格、调节、相框、快门、画幅、闪光灯、翻转。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。
 
 ## 队列
 

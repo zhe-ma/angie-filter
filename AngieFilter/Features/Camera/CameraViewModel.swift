@@ -11,6 +11,10 @@ final class CameraViewModel: ObservableObject {
     @Published var draft = LookAdjustment()
     @Published var adjustmentNotice: String?
     @Published var filtersOpen = false
+    @Published var frameOpen = false
+    @Published var frame = FrameSettings()
+    /// True while the place switch is on, the caption style is selected, and no place string exists yet.
+    @Published private(set) var placeMissing = false
     @Published var familyID = "original"
     @Published var reviewImage: UIImage?
     @Published var isSaving = false
@@ -27,6 +31,10 @@ final class CameraViewModel: ObservableObject {
     private var refreshTimer: Timer?
     private var focusClear: Task<Void, Never>?
     private var zoomHide: Task<Void, Never>?
+    private var dayTimer: Timer?
+    private var previewDate = FrameDateText.string(from: Date())
+    private var placeText = ""
+    private let places = PlaceReader()
     private var pinchStart: CGFloat = 1
     private var isPinching = false
 
@@ -37,12 +45,31 @@ final class CameraViewModel: ObservableObject {
         session.onPhoto = { [weak self] image in
             self?.reviewImage = image
             self?.closeFilters()
+            self?.frameOpen = false
         }
         session.onFailure = { [weak self] message in
             self?.banner = message
         }
+        places.onPlace = { [weak self] text in
+            guard let self else { return }
+            self.placeMissing = false
+            guard text != self.placeText else { return }
+            self.placeText = text
+            self.syncParameters()
+        }
+        places.onDenied = { [weak self] in
+            guard let self else { return }
+            self.placeText = ""
+            self.placeMissing = self.frame.showsPlace && self.frame.style == .captioned
+            self.syncParameters()
+        }
         syncParameters()
         session.start()
+        dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshPreviewDate()
+            }
+        }
     }
 
     var selectedLook: Look {
@@ -66,6 +93,23 @@ final class CameraViewModel: ObservableObject {
     func flipCamera() {
         let next: CameraFacing = status.facing == .back ? .front : .back
         session.setFacing(next)
+    }
+
+    var previewWidthOverHeight: CGFloat {
+        let photo = aspectRatio.widthOverHeight
+        guard frame.drawsBorder else { return photo }
+        return FrameLayout.outerWidthOverHeight(photoWidthOverHeight: photo)
+    }
+
+    func photoRect(in size: CGSize) -> CGRect {
+        guard frame.drawsBorder else { return CGRect(origin: .zero, size: size) }
+        let fractions = FrameLayout.fractions(photoWidthOverHeight: aspectRatio.widthOverHeight)
+        return CGRect(
+            x: size.width * fractions.left,
+            y: size.height * fractions.top,
+            width: size.width * (1 - fractions.left * 2),
+            height: size.height * (1 - fractions.top - fractions.bottom)
+        )
     }
 
     func selectFamily(_ id: String) {
@@ -131,6 +175,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func toggleFilters() {
+        frameOpen = false
         filtersOpen.toggle()
         if filtersOpen {
             familyID = LookLibrary.family(containing: lookID).id
@@ -153,14 +198,57 @@ final class CameraViewModel: ObservableObject {
         refreshTimer = nil
     }
 
-    func focus(viewPoint: CGPoint, in size: CGSize) {
+    func toggleFrame() {
+        if frameOpen {
+            frameOpen = false
+            return
+        }
+        if filtersOpen { closeFilters() }
+        frameOpen = true
+    }
+
+    func dismissPanels() {
+        frameOpen = false
+        closeFilters()
+    }
+
+    func selectFrameStyle(_ style: FrameStyle) {
+        frame.style = style
+        refreshPlaceTracking()
+        syncParameters()
+    }
+
+    func setShowsModel(_ shows: Bool) {
+        frame.showsModel = shows
+        syncParameters()
+    }
+
+    func setShowsDate(_ shows: Bool) {
+        frame.showsDate = shows
+        syncParameters()
+    }
+
+    func setShowsPlace(_ shows: Bool) {
+        frame.showsPlace = shows
+        refreshPlaceTracking()
+        syncParameters()
+    }
+
+    func setCustomText(_ text: String) {
+        let next = FrameSettings.limited(text)
+        guard next != frame.customText else { return }
+        frame.customText = next
+        syncParameters()
+    }
+
+    func focus(viewPoint: CGPoint, in size: CGSize, displayPoint: CGPoint) {
         guard size.width > 1, size.height > 1 else { return }
         let x = min(max(viewPoint.x / size.width, 0), 1)
         let y = min(max(viewPoint.y / size.height, 0), 1)
         let devicePoint = status.facing == .front
             ? CGPoint(x: y, y: x)
             : CGPoint(x: y, y: 1 - x)
-        focusPoint = viewPoint
+        focusPoint = displayPoint
         session.focus(atDevicePoint: devicePoint)
         focusClear?.cancel()
         focusClear = Task {
@@ -246,6 +334,20 @@ final class CameraViewModel: ObservableObject {
             parameters.aspectRatio = aspect
             parameters.lookID = look.id
             parameters.adjustment = adjustment
+            parameters.frame = frame
+            parameters.frameDate = previewDate
+            parameters.framePlace = placeText
+        }
+    }
+
+    private func refreshPlaceTracking() {
+        let wants = frame.showsPlace && frame.style == .captioned
+        if wants {
+            placeMissing = placeText.isEmpty
+            places.start()
+        } else {
+            places.stop()
+            placeMissing = false
         }
     }
 
@@ -285,5 +387,12 @@ final class CameraViewModel: ObservableObject {
         if let work {
             DispatchQueue.global(qos: .userInitiated).async(execute: work)
         }
+    }
+
+    private func refreshPreviewDate() {
+        let day = FrameDateText.string(from: Date())
+        guard day != previewDate else { return }
+        previewDate = day
+        syncParameters()
     }
 }

@@ -36,6 +36,13 @@ struct RenderParameters: Equatable, Sendable {
     var aspectRatio: AspectRatio = .fourThree
     var lookID: Look.ID = Look.originalID
     var adjustment = LookAdjustment()
+    var frame = FrameSettings()
+    /// Marketing name stamped by the session. Empty until the first update.
+    var frameModelName = ""
+    /// Calendar day printed on the caption, `yyyy.MM.dd`.
+    var frameDate = ""
+    /// City and district printed on the caption. Empty until a place resolves.
+    var framePlace = ""
     var orientation: CGImagePropertyOrientation = .right
     var mirrorHorizontally = false
     var quality: RenderQuality = .preview

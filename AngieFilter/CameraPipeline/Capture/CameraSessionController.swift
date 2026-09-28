@@ -22,6 +22,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private var device: AVCaptureDevice?
     private var isConfigured = false
     private let renderBusy = Locked(false)
+    private let captions = FrameCaptionCache()
+    private let modelName = PhoneModelName.marketingName(for: DeviceMachine.identifier)
+    private let shutterDate = Locked("")
+    private let shutterPlace = Locked("")
 
     override init() {
         guard let metalDevice = MTLCreateSystemDefaultDevice() else {
@@ -32,7 +36,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     func updateRenderParameters(_ body: (inout RenderParameters) -> Void) {
-        parameters.with(body)
+        parameters.with { value in
+            body(&value)
+            value.frameModelName = modelName
+        }
     }
 
     func currentThumbnailSource() -> CIImage? {
@@ -109,6 +116,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     func capturePhoto() {
+        let day = FrameDateText.string(from: Date())
+        let place = parameters.with { $0.framePlace }
+        shutterDate.with { $0 = day }
+        shutterPlace.with { $0 = place }
         sessionQueue.async { [weak self] in
             guard let self, self.isConfigured else { return }
             let settings = AVCapturePhotoSettings()
@@ -136,9 +147,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let source = FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
         latestSource.with { $0 = source }
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
+        let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         let busyFlag = renderBusy
         DispatchQueue.main.async { [weak self] in
-            self?.previewView.draw(image: graded)
+            self?.previewView.draw(image: framed)
             busyFlag.with { $0 = false }
         }
     }
@@ -156,15 +168,46 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         renderParameters.quality = .still
         renderParameters.orientation = .up
         renderParameters.mirrorHorizontally = captureFacing.with { $0 } == .front
+        renderParameters.frameDate = shutterDate.with { $0 }
+        renderParameters.framePlace = shutterPlace.with { $0 }
         let source = FrameImageMaker.sourceImage(from: photoImage, parameters: renderParameters)
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
-        guard let image = previewView.makeImage(graded) else {
+        let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: true)
+        guard let image = previewView.makeImage(framed) else {
             publishFailure("照片处理失败")
             return
         }
         DispatchQueue.main.async { [weak self] in
             self?.onPhoto?(image)
         }
+    }
+
+    private func framedImage(_ image: CIImage, parameters: RenderParameters, synchronousCaption: Bool) -> CIImage {
+        guard parameters.frame.drawsBorder, let layout = FrameLayout.make(photoSize: image.extent.size) else {
+            return image
+        }
+        let caption = captionPlate(layout: layout, parameters: parameters, synchronous: synchronousCaption)
+        return FrameCompositor.apply(image, settings: parameters.frame, caption: caption)
+    }
+
+    private func captionPlate(layout: FrameLayout, parameters: RenderParameters, synchronous: Bool) -> CIImage? {
+        guard let key = FrameCaptionRenderer.key(layout: layout, parameters: parameters) else { return nil }
+        if let cached = captions.image(for: key) { return cached }
+        if synchronous || Thread.isMainThread {
+            let made = Thread.isMainThread
+                ? FrameCaptionRenderer.image(for: key)
+                : DispatchQueue.main.sync { FrameCaptionRenderer.image(for: key) }
+            if let made { captions.remember(made, for: key) }
+            return made
+        }
+        let cache = captions
+        DispatchQueue.main.async {
+            guard cache.image(for: key) == nil else { return }
+            if let made = FrameCaptionRenderer.image(for: key) {
+                cache.remember(made, for: key)
+            }
+        }
+        return nil
     }
 
     private func configureAndStart() {

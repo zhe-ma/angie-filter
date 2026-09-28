@@ -69,6 +69,7 @@ flowchart LR
 4. 颗粒板：平铺，`CISoftLightBlendMode`，暗部遮罩压住高光，再按颗粒量溶回这一步的输入。细板横向大约铺 3 次，粗板大约 1.7 次。不用 `CIRandomGenerator`。只属于配方。
 5. 暗角：`CIVignette`。预览半径 1.2，成片半径 1.6。多数风格这一项是 0。只属于配方。
 6. `GradeApplicator` 按强度用 `CIDissolveTransition` 溶回几何之后的原图。0 是原图，1 是完整风格。强度约等于 0 时整段直接返回。
+7. 相框在这一步之后，由 `FrameCompositor` 把已经调好的图贴进更大的白画布。缩略图停在第 6 步。
 
 暗部遮罩是亮度上的 `CIToneCurve`：`(0, 0.15)`、`(0.18, 1)`、`(0.42, 0.72)`、`(0.72, 0.18)`、`(1, 0)`。颗粒落在阴影，纯白干净。`CIColorControls` 只用来抽出亮度。
 

@@ -126,7 +126,17 @@
   }
   .caption-bar[hidden] { display: none; }
   .caption-bar.only-custom { grid-template-columns: 1fr; }
-  .cap-model { justify-self: start; }
+  .cap-leading {
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    gap: 0.55em;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .cap-place { overflow: hidden; text-overflow: ellipsis; }
+  .frame-place-note { margin: 0; font-size: 12px; color: rgba(255,255,255,.5); }
+  .frame-place-note[hidden] { display: none; }
   .cap-custom {
     justify-self: center;
     max-width: 46%;
@@ -532,7 +542,7 @@
               <div class="zoom-row" id="zoom-row"></div>
             </div>
             <div class="caption-bar" id="caption-bar" hidden>
-              <span class="cap-model"></span>
+              <span class="cap-leading"><span class="cap-model"></span><span class="cap-place"></span></span>
               <span class="cap-custom"></span>
               <span class="cap-date"></span>
             </div>
@@ -548,8 +558,10 @@
             <div class="frame-fields" id="frame-fields" hidden>
               <div class="frame-switches">
                 <label><input id="frame-model" type="checkbox" checked>型号</label>
+                <label><input id="frame-place" type="checkbox">地点</label>
                 <label><input id="frame-date" type="checkbox" checked>日期</label>
               </div>
+              <p class="frame-place-note" id="frame-place-note" hidden>未获得位置</p>
               <input id="frame-text" type="text" placeholder="一行短句" enterkeyhint="done">
             </div>
           </div>
@@ -738,6 +750,8 @@ const state = {
   frameOpen: false,
   frameStyle: "off",
   showsModel: true,
+  showsPlace: false,
+  placeMissing: false,
   showsDate: true,
   customText: "",
   familyId: "original",
@@ -756,7 +770,7 @@ const hints = {
   camera: [
     "点画面对焦。点在白边上只收起面板",
     "点左侧「相框」：关闭、白边、白边带字。和右侧「滤镜」一次只展开一个",
-    "白边带字可以分别开关型号、日期，并写一行最多 12 个字的短句",
+    "白边带字可以分别开关型号、地点、日期，并写一行最多 12 个字的短句",
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
     "上面点分类，只换下面这一排；原图单独在最前",
     "缩略图都是当前画面，点一下立即套用",
@@ -996,12 +1010,14 @@ function fillCaption(bar, height) {
   bar.hidden = !captioned;
   if (!captioned) return;
   const model = state.showsModel ? "iPhone 13" : "";
+  const place = state.showsPlace && !state.placeMissing ? "上海 · 徐汇区" : "";
   const custom = state.customText.trim();
   const date = state.showsDate ? formatDate(new Date()) : "";
   bar.querySelector(".cap-model").textContent = model;
+  bar.querySelector(".cap-place").textContent = place;
   bar.querySelector(".cap-custom").textContent = custom;
   bar.querySelector(".cap-date").textContent = date;
-  bar.classList.toggle("only-custom", Boolean(custom) && !model && !date);
+  bar.classList.toggle("only-custom", Boolean(custom) && !model && !place && !date);
   if (height) bar.style.fontSize = `${Math.max(8, height * 0.28)}px`;
 }
 function renderFrame() {
@@ -1015,6 +1031,8 @@ function renderFrame() {
     button.classList.toggle("active", button.dataset.style === state.frameStyle);
   });
   $("frame-model").checked = state.showsModel;
+  $("frame-place").checked = state.showsPlace;
+  $("frame-place-note").hidden = !(state.frameStyle === "captioned" && state.showsPlace && state.placeMissing);
   $("frame-date").checked = state.showsDate;
   if (document.activeElement !== $("frame-text")) $("frame-text").value = state.customText;
   const geo = applyPads($("frame"));
@@ -1053,7 +1071,7 @@ function paintReview() {
         </div>
       </div>
       <div class="caption-bar">
-        <span class="cap-model"></span>
+        <span class="cap-leading"><span class="cap-model"></span><span class="cap-place"></span></span>
         <span class="cap-custom"></span>
         <span class="cap-date"></span>
       </div>
@@ -1148,7 +1166,7 @@ $("phone").addEventListener("click", (event) => {
     state.frameStyle = target.dataset.style;
     renderFrame();
     layoutFrame();
-    const label = { off: "关闭。画面回到裁切比例。", white: "白边。四周留白，底部更宽，没有字。", captioned: "白边带字。型号和日期默认开着，可以再写一行短句。" };
+    const label = { off: "关闭。画面回到裁切比例。", white: "白边。四周留白，底部更宽，没有字。", captioned: "白边带字。型号和日期默认开着，地点默认关，可以再写一行短句。" };
     explain(label[state.frameStyle]);
   } else if (action === "family") {
     state.familyId = target.dataset.id;
@@ -1279,6 +1297,14 @@ $("frame-model").addEventListener("change", () => {
   state.showsModel = $("frame-model").checked;
   renderFrame();
   explain(state.showsModel ? "底栏左侧显示 iPhone 13。" : "型号已关掉。再打开「白边带字」时还会记得这个开关。");
+});
+$("frame-place").addEventListener("change", () => {
+  state.showsPlace = $("frame-place").checked;
+  state.placeMissing = false;
+  renderFrame();
+  explain(state.showsPlace
+    ? "地点打开。底栏在型号旁边印上上海 · 徐汇区。真机上会先请求位置；没有结果时面板写「未获得位置」，这句不进照片。"
+    : "地点已关掉。底栏不再印城市。");
 });
 $("frame-date").addEventListener("change", () => {
   state.showsDate = $("frame-date").checked;
