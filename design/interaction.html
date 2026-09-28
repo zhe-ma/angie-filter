@@ -440,9 +440,9 @@
             </div>
             <div class="adjust" id="adjust" hidden>
               <label>强度 <input id="adj-intensity" data-adjust="intensity" type="range" min="0" max="100" value="100"><span id="adj-intensity-value">100</span></label>
-              <label>清晰度 <input id="adj-clarity" data-adjust="clarity" type="range" min="0" max="100" value="30"><span id="adj-clarity-value">30</span></label>
-              <label>颗粒 <input id="adj-grain" data-adjust="grain" type="range" min="0" max="100" value="0"><span id="adj-grain-value">0</span></label>
-              <label>暗角 <input id="adj-vignette" data-adjust="vignette" type="range" min="0" max="100" value="0"><span id="adj-vignette-value">0</span></label>
+              <label class="adjust-spatial">清晰度 <input id="adj-clarity" data-adjust="clarity" type="range" min="0" max="100" value="30"><span id="adj-clarity-value">30</span></label>
+              <label class="adjust-spatial">颗粒 <input id="adj-grain" data-adjust="grain" type="range" min="0" max="100" value="0"><span id="adj-grain-value">0</span></label>
+              <label class="adjust-spatial">暗角 <input id="adj-vignette" data-adjust="vignette" type="range" min="0" max="100" value="0"><span id="adj-vignette-value">0</span></label>
               <div class="adjust-actions">
                 <button data-action="reset-adjust">恢复默认</button>
                 <button class="save-adjust" data-action="save-adjust">保存</button>
@@ -513,6 +513,12 @@
 function stock(id, name, grade, grain, vignette, about) {
   return { id, name, grade, grain, vignette, about };
 }
+function lut(id, name, strength) {
+  const look = stock(id, name, "saturate(1.12) contrast(1.04)", 0, 0, "LUT 图。调节只有强度。");
+  look.scheme = "lut";
+  look.strength = strength;
+  return look;
+}
 const plain = stock("original", "原图", "none", 0, 0, "不套风格。");
 
 const catalog = [
@@ -581,6 +587,22 @@ const catalog = [
     stock("canon", "佳能", "sepia(0.1) contrast(1.08) saturate(1.08) brightness(1.02)", 0, 0, "佳能直出。略暖，肤色偏红，对比清楚。"),
     stock("nikon", "尼康", "saturate(1.32) contrast(1.12) hue-rotate(-4deg)", 0, 0, "尼康鲜艳。绿和蓝更开。"),
     stock("sony", "索尼", "hue-rotate(6deg) contrast(1.04) saturate(1.0) brightness(1.01)", 0, 0, "索尼直出。偏中性，略冷。")
+  ]},
+  { id: "lut-portrait", name: "人像", looks: [
+    lut("lut-ziran", "自然", 0.8), lut("lut-qingtou", "清透", 0.8), lut("lut-wenrou", "温柔", 0.8),
+    lut("lut-baixi", "白皙", 1), lut("lut-fennen", "粉嫩", 0.8), lut("lut-candyb", "糖果", 0.65),
+    lut("lut-dannai", "淡奶", 1), lut("lut-musi", "慕斯", 0.8), lut("lut-zhuguang", "珠光", 1),
+    lut("lut-huoli", "活力", 0.8), lut("lut-qingchun", "青春", 0.8)
+  ]},
+  { id: "lut-scenery", name: "风景", looks: [
+    lut("lut-xuanlan", "绚烂", 1), lut("lut-chengjing", "澄净", 0.8), lut("lut-dushi", "都市", 0.8), lut("lut-jiaoye", "郊野", 0.8)
+  ]},
+  { id: "lut-food", name: "美食", looks: [
+    lut("lut-meiwei", "美味", 0.8), lut("lut-xinxian", "新鲜", 0.8), lut("lut-youge", "优格", 0.8), lut("lut-lengcui", "冷萃", 0.8)
+  ]},
+  { id: "lut-fresh", name: "新锐", looks: [
+    lut("lut-yishigan", "仪式感", 0.8), lut("lut-qingjiaopian", "轻胶片", 0.8), lut("lut-fugu", "复古", 0.8),
+    lut("lut-luoma", "罗马", 1), lut("lut-dianying", "电影", 0.8), lut("lut-huidiao", "灰调", 1)
   ]}
 ];
 
@@ -658,6 +680,9 @@ function showScreen(screen) {
 }
 
 function baselineAdjust(look) {
+  if (look.scheme === "lut") {
+    return { intensity: Math.round((look.strength || 0.8) * 100), clarity: 0, grain: 0, vignette: 0 };
+  }
   return {
     intensity: 100,
     clarity: 30,
@@ -688,6 +713,9 @@ function renderAdjust() {
   $("adjust-toggle").textContent = open ? "收起" : "调节";
   $("adjust").hidden = !open;
   $("adjust-notice").textContent = state.notice;
+  document.querySelectorAll(".adjust-spatial").forEach((node) => {
+    node.hidden = look.scheme === "lut";
+  });
   if (open) {
     for (const key of ["intensity", "clarity", "grain", "vignette"]) {
       $(`adj-${key}`).value = String(state.draft[key]);

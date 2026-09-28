@@ -155,14 +155,16 @@ struct CameraView: View {
             adjustmentRow("强度", value: model.draft.intensity, span: 1) { value in
                 model.updateDraft { $0.intensity = value }
             }
-            adjustmentRow("清晰度", value: model.draft.clarity, span: 1) { value in
-                model.updateDraft { $0.clarity = value }
-            }
-            adjustmentRow("颗粒", value: model.draft.grain, span: 1) { value in
-                model.updateDraft { $0.grain = value }
-            }
-            adjustmentRow("暗角", value: model.draft.vignette, span: 1.5) { value in
-                model.updateDraft { $0.vignette = value }
+            if model.selectedLook.adjustsSpatially {
+                adjustmentRow("清晰度", value: model.draft.clarity, span: 1) { value in
+                    model.updateDraft { $0.clarity = value }
+                }
+                adjustmentRow("颗粒", value: model.draft.grain, span: 1) { value in
+                    model.updateDraft { $0.grain = value }
+                }
+                adjustmentRow("暗角", value: model.draft.vignette, span: 1.5) { value in
+                    model.updateDraft { $0.vignette = value }
+                }
             }
             HStack(spacing: 12) {
                 Button("恢复默认", action: model.resetDraft)

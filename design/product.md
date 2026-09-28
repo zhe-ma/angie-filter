@@ -33,9 +33,9 @@ iPhone 出图已经是处理过的 Display P3 / sRGB，这一阶段在这张成�
 
 ## 滤镜目录
 
-界面文案是「滤镜」。代码类型是 `Look`。一条横滑，原图在第一项。徕卡、富士、柯达、电影、理光、哈苏、依尔福、宝丽来、数码机身是同一层，不再分两排。
+界面文案是「滤镜」。代码类型是 `Look`。一条横滑，原图在第一项。徕卡、富士、柯达、电影、理光、哈苏、依尔福、宝丽来、数码机身，以及 LUT 的人像、风景、美食、新锐，是同一层分类。
 
-可点击目录在 [interaction.html](interaction.html)。脚本里按家族分组，画到条上时原图只保留一次，其余按下面的顺序摊平。显示名以这条为准。id 同时是 `Look.id` 和 `ColorCubes/<id>.acube` 的文件名。
+可点击目录在 [interaction.html](interaction.html)。脚本里按家族分组。配方滤镜的 id 同时是 `Look.id` 和 `ColorCubes/<id>.acube` 的文件名。LUT 滤镜的 id 以 `lut-` 开头，图在 `LUTs/<lutImage>.png`。
 
 每一款非原图都是正式内置资源。下面五款是视觉验收组：自然、经典铬黄、肖像 400、800T、黑白（`acros`）。
 

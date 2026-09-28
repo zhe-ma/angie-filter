@@ -12,15 +12,17 @@ struct Look: Identifiable, Equatable, Sendable {
     let id: ID
     let name: String
     let about: String
-    let clarity: Float
-    let grain: Float
-    let grainPlate: GrainPlateKind
-    let vignette: Float
+    let grade: LookGrade
 
     static let originalID = "original"
 
     var isOriginal: Bool { id == Self.originalID }
 
-    /// Baked 65³ color cube in the bundle. Absent for 原图.
-    var colorCubeName: String? { isOriginal ? nil : id }
+    var clarity: Float { grade.colorCube?.clarity ?? 0 }
+    var grain: Float { grade.colorCube?.grain ?? 0 }
+    var grainPlate: GrainPlateKind { grade.colorCube?.grainPlate ?? .none }
+    var vignette: Float { grade.colorCube?.vignette ?? 0 }
+
+    /// Recipe looks expose clarity, grain, and vignette. LUT looks expose intensity only.
+    var adjustsSpatially: Bool { grade.colorCube != nil }
 }

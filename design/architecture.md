@@ -2,14 +2,18 @@
 
 一个应用目标，三层目录，先不拆 Swift Package。边界稳定、并且 Domain 能单独测试之后，再把 Domain 抽成包。
 
+这份文档按代码来写。图里的名字都能在 `AngieFilter/` 里找到。
+
+## 分层
+
 依赖向下。App 是组合根。Features 可以使用 CameraPipeline 和 Domain。CameraPipeline 可以使用 Domain。Domain 不 import SwiftUI、AVFoundation、Core Image、PhotoKit。CameraPipeline 不 import SwiftUI。`CVPixelBuffer` 和 `CIImage` 留在 CameraPipeline。
 
 ```mermaid
 flowchart TB
-  app[App 组合根]
-  features[Features SwiftUI]
-  pipeline[CameraPipeline]
-  domain[Domain]
+  app["App<br/>AngieFilterApp"]
+  features["Features<br/>SwiftUI 界面和 ViewModel"]
+  pipeline["CameraPipeline<br/>会话、渲染、相册"]
+  domain["Domain<br/>Look、画幅、渲染参数"]
   app --> features
   features --> pipeline
   features --> domain
@@ -18,28 +22,132 @@ flowchart TB
 
 当前组合根很薄：`AngieFilter/App/AngieFilterApp.swift` 只放上 `CameraView`。`CameraViewModel` 自己创建 `CameraSessionController`。
 
-## Domain 拥有什么
-
-与平台无关、需要被验收的决策：
-
-| 类型 | 文件 | 职责 |
-| --- | --- | --- |
-| `Look`、`GrainPlateKind` | `AngieFilter/Domain/Looks/Look.swift` | 风格数据。`clarity`、`grain`、`grainPlate`、`vignette`。`colorCubeName` 对原图为 `nil`，其余等于 `id` |
-| `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 从包内 `Looks.json` 加载。读失败时只返回原图 |
-| `AspectRatio` | `AngieFilter/Domain/Capture/AspectRatio.swift` | `fourThree` / `sixteenNine` / `square`，以及 `next()` |
-| `AspectCrop` | `AngieFilter/Domain/Capture/AspectCrop.swift` | 转正之后的中心裁切 `pixelRect` |
-| `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值。界面不读 `AVCaptureDevice` |
-| `RenderParameters`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照 |
-
-`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`（`LookAdjustment`：强度、清晰度、颗粒、暗角）、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。调节后的数值按滤镜 id 记在 `CameraViewModel` 的内存字典里，不写磁盘。缩略图始终用这款滤镜的默认参数。
-
-Domain 里没有 `CameraEffect`，也没有 `LookFamily`。风格是数据，节点留在 CameraPipeline，因为入参是 `CIImage`。
+风格是数据，渲染节点留在 CameraPipeline，因为入参是 `CIImage`。`Look.grade` 只描述用哪条方案和它的资源，不持有滤镜对象。
 
 几何使用 CoreGraphics 的 `CGRect` / `CGFloat`，方向使用 ImageIO 的 `CGImagePropertyOrientation`。这些是值，不是会话，也不是图像缓冲。
 
-## CameraPipeline 拥有什么
+## 目录
 
-会话、预览帧、把 `Look` 画成图像、写入相册。
+```mermaid
+flowchart LR
+  subgraph domain [Domain]
+    looks[Looks]
+    captureValues[Capture 值]
+    params[RenderParameters]
+  end
+  subgraph pipeline [CameraPipeline]
+    session[Capture 会话]
+    render[Rendering]
+    photos[Photos]
+  end
+  subgraph ui [Features]
+    camera[Camera]
+    review[Review]
+  end
+  subgraph resources [Resources]
+    cubes[ColorCubes]
+    luts[LUTs]
+    grain[Grain]
+    json[Looks.json / LUTLooks.json]
+  end
+  camera --> session
+  camera --> looks
+  session --> render
+  render --> looks
+  render --> cubes
+  render --> luts
+  render --> grain
+  looks --> json
+  review --> photos
+```
+
+| 层 | 目录 | 放什么 |
+| --- | --- | --- |
+| Domain | `AngieFilter/Domain/Looks/` | `Look`、`LookGrade`、`LookFamily`、`LookLibrary` |
+| Domain | `AngieFilter/Domain/Capture/` | 画幅、变焦档、闪光灯、朝向、权限。界面不读 `AVCaptureDevice` |
+| Domain | `AngieFilter/Domain/Rendering/` | `RenderParameters`、`LookAdjustment`、`RenderQuality` |
+| CameraPipeline | `AngieFilter/CameraPipeline/Capture/` | `CameraSessionController`、`ZoomLadderBuilder` |
+| CameraPipeline | `AngieFilter/CameraPipeline/Rendering/` | 几何、分发、两套 grader、资源缓存、预览 |
+| CameraPipeline | `AngieFilter/CameraPipeline/Photos/` | `PhotoLibraryStore` |
+| Features | `AngieFilter/Features/Camera/` | `CameraView`、`CameraViewModel`、`FilterStripView` |
+| Features | `AngieFilter/Features/Review/` | `ReviewView` |
+| 资源 | `AngieFilter/Resources/` | 立方体、LUT 图、颗粒板、两份目录 JSON |
+
+## 一帧怎么走
+
+预览和成片共用几何和风格。差的是像素从哪来，以及 `RenderQuality` 是 `preview` 还是 `still`。
+
+```mermaid
+flowchart TB
+  frame["预览帧或照片"] --> geo["FrameImageMaker<br/>转正、镜像、画幅裁切"]
+  snap["RenderParameters 快照"] --> geo
+  geo --> apply["GradeApplicator"]
+  lib["LookLibrary.look"] --> apply
+  apply --> none["grade.none<br/>原图"]
+  apply --> cube["ColorCubeGrader<br/>配方立方体"]
+  apply --> lut["LUTImageGrader<br/>512 LUT 图"]
+  none --> mix["按强度溶回原图"]
+  cube --> mix
+  lut --> mix
+  mix --> out["预览 MTKView / 确认页 UIImage / 缩略图"]
+```
+
+`RenderParameters` 放在 `Locked` 里。`videoQueue` 取出一份值再渲染，不在预览队列里锁住 ViewModel。
+
+缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `preview`。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
+
+## 两种方案怎么并存
+
+`LookGrade` 是扩展点。它是封闭枚举，编译器会要求 `GradeApplicator` 写全每个分支。
+
+```mermaid
+flowchart TB
+  look["Look"] --> grade{"LookGrade"}
+  grade --> n["none<br/>原图"]
+  grade --> c["colorCube<br/>ColorCubeGrade<br/>立方体名、清晰度、颗粒、暗角"]
+  grade --> l["lutImage<br/>LUTImageGrade<br/>PNG 名、默认强度"]
+  c --> cg["ColorCubeGrader"]
+  l --> lg["LUTImageGrader"]
+  cg --> storeC["ColorCubeStore<br/>最近一张 .acube"]
+  lg --> storeL["LUTImageStore<br/>最近一张 PNG"]
+```
+
+| 方案 | 资源 | 运行时还能调什么 |
+| --- | --- | --- |
+| `none` | 无 | 无 |
+| `colorCube` | `ColorCubes/<id>.acube`，目录在 `Looks.json` | 强度、清晰度、颗粒、暗角 |
+| `lutImage` | `LUTs/<name>.png`，目录在 `LUTLooks.json` | 只有强度。默认值是目录里的 `strength` |
+
+强度混回原图在 `GradeApplicator`，两条路径共用。清晰度、颗粒、暗角只属于配方。界面用 `Look.adjustsSpatially` 决定调节面板画几根滑杆。
+
+调节后的数值按滤镜 id 记在 `CameraViewModel` 的内存字典里，不写磁盘。点保存才写入。收起或不保存就回到上次保存的值；没有保存过则回到默认。缩略图始终用默认参数，方便和改过的画面对照。
+
+再加一种方案时走这四步，预览、成片和缩略图的调用点不用改：
+
+```mermaid
+flowchart LR
+  step1["1. LookGrade 加 case"] --> step2["2. CameraPipeline 加 Grader"]
+  step2 --> step3["3. 资源和目录 JSON"]
+  step3 --> step4["4. GradeApplicator 加分支<br/>界面按 grade 决定滑杆"]
+```
+
+Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeline。
+
+## Domain 类型
+
+| 类型 | 文件 | 职责 |
+| --- | --- | --- |
+| `Look`、`GrainPlateKind` | `AngieFilter/Domain/Looks/Look.swift` | 风格数据。空间参数从 `LookGrade` 读出 |
+| `LookGrade`、`ColorCubeGrade`、`LUTImageGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜用哪条渲染方案 |
+| `LookFamily` | `AngieFilter/Domain/Looks/LookFamily.swift` | 分类。成员仍是 `Look` |
+| `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 先读 `Looks.json`，再接上 `LUTLooks.json`。配方文件缺失时只返回原图 |
+| `AspectRatio`、`AspectCrop` | `AngieFilter/Domain/Capture/` | 画幅和转正之后的中心裁切 |
+| `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值 |
+| `RenderParameters`、`LookAdjustment`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照 |
+
+`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。
+
+## CameraPipeline 类型
 
 | 类型 | 文件 |
 | --- | --- |
@@ -47,15 +155,18 @@ Domain 里没有 `CameraEffect`，也没有 `LookFamily`。风格是数据，节
 | `ZoomLadderBuilder` | `AngieFilter/CameraPipeline/Capture/ZoomLadderBuilder.swift` |
 | `FrameImageMaker` | `AngieFilter/CameraPipeline/Rendering/FrameImageMaker.swift` |
 | `GradeApplicator` | `AngieFilter/CameraPipeline/Rendering/GradeApplicator.swift` |
+| `ColorCubeGrader` | `AngieFilter/CameraPipeline/Rendering/ColorCubeGrader.swift` |
+| `LUTImageGrader` | `AngieFilter/CameraPipeline/Rendering/LUTImageGrader.swift` |
 | `ColorCubeStore` | `AngieFilter/CameraPipeline/Rendering/ColorCubeStore.swift` |
+| `LUTImageStore` | `AngieFilter/CameraPipeline/Rendering/LUTImageStore.swift` |
 | `GrainLibrary` | `AngieFilter/CameraPipeline/Rendering/GrainLibrary.swift` |
 | `PreviewMetalView` | `AngieFilter/CameraPipeline/Rendering/CoreImageFrameRenderer.swift` |
 | `PhotoLibraryStore`、`PhotoLibraryError` | `AngieFilter/CameraPipeline/Photos/PhotoLibraryStore.swift` |
 | `Locked` | `AngieFilter/CameraPipeline/Support/Locked.swift` |
 
-`CoreImageFrameRenderer.swift` 里的类型是 `PreviewMetalView`。计划里曾经分开的 `ColorCubeGrade`、`ClarityGrade`、`GrainGrade` 已经收进 `GradeApplicator`。
+`CoreImageFrameRenderer.swift` 里的类型是 `PreviewMetalView`。
 
-## Features 拥有什么
+## Features
 
 | 类型 | 文件 |
 | --- | --- |
@@ -64,16 +175,25 @@ Domain 里没有 `CameraEffect`，也没有 `LookFamily`。风格是数据，节
 | `FilterStripView` | `AngieFilter/Features/Camera/FilterStripView.swift` |
 | `ReviewView` | `AngieFilter/Features/Review/ReviewView.swift` |
 
-`CameraViewModel` 在主线程，保存界面状态：当前 `lookID`、强度、强度条是否展开、滤镜面板是否展开、确认页照片、保存中、对焦框、缩略图。设备状态由 `CameraStatus` 推上来。
+`CameraViewModel` 在主线程。它保存当前 `lookID`、分类、调节草稿、已保存的调节、滤镜面板是否展开、确认页照片、保存中、对焦框、缩略图。设备状态由 `CameraStatus` 推上来。
 
-ViewModel 发意图：变焦、切换风格、快门、画幅、闪光灯、翻转。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。滤镜节点仍在 `GradeApplicator` 内部创建。
+ViewModel 发意图：变焦、切换风格、调节、快门、画幅、闪光灯、翻转。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。
 
-## 队列和快照
+## 队列
 
-- `sessionQueue`（`angie.camera.session`）配置和操作 `AVCaptureSession`
-- `videoQueue`（`angie.camera.video`）接收视频帧
+```mermaid
+flowchart LR
+  main["主队列<br/>ViewModel、界面"]
+  sessionQ["sessionQueue<br/>angie.camera.session"]
+  videoQ["videoQueue<br/>angie.camera.video"]
+  main -->|"变焦、翻转、闪光灯、快门"| sessionQ
+  sessionQ -->|"配置 AVCaptureSession"| device["相机设备"]
+  device -->|"32BGRA 帧"| videoQ
+  videoQ -->|"读 RenderParameters 快照并画"| metal["PreviewMetalView"]
+  videoQ -->|"成片"| main
+```
 
-不用 actor 包住 `AVCaptureSession`。会话回调留在它自己的队列上。`RenderParameters` 放在 `Locked` 里，视频队列取出一份值再渲染，不在预览队列里锁住 ViewModel。`onStatus`、`onPhoto`、`onFailure` 都回到主队列。
+不用 actor 包住 `AVCaptureSession`。会话回调留在它自己的队列上。`onStatus`、`onPhoto`、`onFailure` 都回到主队列。
 
 预览忙时，`CameraSessionController` 用 `isDrawing` 丢掉还没画完的新帧。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。
 
@@ -83,28 +203,6 @@ ViewModel 发意图：变焦、切换风格、快门、画幅、闪光灯、翻�
 
 不用 Manager、Helper、Engine，也不做 Coordinator、Rx、服务定位器、`Base`、`Utils`。两个页面用 SwiftUI 切换 `reviewImage`，不做路由框架。
 
-协议曾经按角色设计过，用来在测试里换假实现：
+协议曾经按角色设计过，用来在测试里换假实现：`CameraControlling`、`LookRendering`、`PhotoLibrarySaving`。这些协议没有进当前代码。界面持有具体的 `CameraSessionController`，用 `onStatus`、`onPhoto`、`onFailure` 三个闭包回传。渲染入口是 `GradeApplicator.apply`。存图入口是 `PhotoLibraryStore.save`。相册失败是 `PhotoLibraryError`。会话失败目前是字符串，经 `onFailure` 变成界面横幅。
 
-- `CameraControlling`：开始、停止、变焦、切镜头、对焦、闪光灯、预览帧、拍一张
-- `LookRendering`：用 `RenderParameters` 处理预览和成片
-- `PhotoLibrarySaving`：保存已编码的照片
-
-这些协议没有进当前代码。界面持有具体的 `CameraSessionController`，用 `onStatus`、`onPhoto`、`onFailure` 三个闭包回传。渲染入口是 `GradeApplicator.apply`。存图入口是 `PhotoLibraryStore.save`。相册失败是 `PhotoLibraryError`。会话失败目前是字符串，经 `onFailure` 变成界面横幅。
-
-`LUT` 只出现在资源说明里。类型名用 `ColorCube`。调节参数在 `LookAdjustment`，镜像是 `mirrorHorizontally`，画幅是 `aspectRatio`。
-
-## 数据流
-
-```mermaid
-flowchart LR
-  video[videoQueue 帧] --> maker[FrameImageMaker]
-  params[RenderParameters 快照] --> maker
-  maker --> grade[GradeApplicator]
-  looks[LookLibrary] --> grade
-  grade --> metal[PreviewMetalView]
-  shutter[AVCapturePhotoOutput] --> still[同一条 FrameImageMaker 加 GradeApplicator]
-  still --> review[ReviewView]
-  review --> save[PhotoLibraryStore]
-```
-
-缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类里的风格调用 `GradeApplicator.apply`，强度 1，质量 `preview`。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
+渲染方案用 `LookGrade` 的 case 区分，不用一组可替换的渲染协议。加方案时改枚举和分发，调用方保持一个入口。

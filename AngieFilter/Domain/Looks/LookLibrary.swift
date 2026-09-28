@@ -21,23 +21,29 @@ enum LookLibrary {
         id: Look.originalID,
         name: "原图",
         about: "不套风格。",
-        clarity: 0,
-        grain: 0,
-        grainPlate: .none,
-        vignette: 0
+        grade: .none
     )
 
-    /// Names and the spatial settings (clarity, grain, vignette) ship in Looks.json.
-    /// Color for every other look is a baked cube from Tools/BakeColorCubes.swift.
+    /// Recipe looks ship in Looks.json. LUT looks ship in LUTLooks.json and are appended.
     private static func load() -> [Look] {
-        let url = Bundle.main.url(forResource: "Looks", withExtension: "json")
-            ?? Bundle.main.url(forResource: "Looks", withExtension: "json", subdirectory: "Resources")
-            ?? bundledFile(named: "Looks.json")
+        let recipes = records(named: "Looks")
+        guard !recipes.isEmpty else { return [original] }
+        var seen = Set(recipes.map(\.id))
+        var looks = recipes
+        for look in records(named: "LUTLooks") where seen.insert(look.id).inserted {
+            looks.append(look)
+        }
+        return looks
+    }
+
+    private static func records(named name: String) -> [Look] {
+        let url = Bundle.main.url(forResource: name, withExtension: "json")
+            ?? Bundle.main.url(forResource: name, withExtension: "json", subdirectory: "Resources")
+            ?? bundledFile(named: "\(name).json")
         guard let url,
               let data = try? Data(contentsOf: url),
-              let records = try? JSONDecoder().decode([LookRecord].self, from: data),
-              !records.isEmpty else {
-            return [original]
+              let records = try? JSONDecoder().decode([LookRecord].self, from: data) else {
+            return []
         }
         return records.map(\.look)
     }
@@ -61,7 +67,11 @@ enum LookLibrary {
         ("hasselblad", "哈苏", ["hncs"]),
         ("ilford", "依尔福", ["hp5", "delta", "fp4", "xp2"]),
         ("polaroid", "宝丽来", ["sx70", "p600"]),
-        ("digital", "数码", ["canon", "nikon", "sony"])
+        ("digital", "数码", ["canon", "nikon", "sony"]),
+        ("lut-portrait", "人像", ["lut-ziran", "lut-qingtou", "lut-wenrou", "lut-baixi", "lut-fennen", "lut-candyb", "lut-dannai", "lut-musi", "lut-zhuguang", "lut-huoli", "lut-qingchun"]),
+        ("lut-scenery", "风景", ["lut-xuanlan", "lut-chengjing", "lut-dushi", "lut-jiaoye"]),
+        ("lut-food", "美食", ["lut-meiwei", "lut-xinxian", "lut-youge", "lut-lengcui"]),
+        ("lut-fresh", "新锐", ["lut-yishigan", "lut-qingjiaopian", "lut-fugu", "lut-luoma", "lut-dianying", "lut-huidiao"])
     ]
 
     private static func makeFamilies() -> [LookFamily] {
@@ -93,20 +103,40 @@ private struct LookRecord: Decodable {
     let id: String
     let name: String
     let about: String
-    let clarity: Float
-    let grain: Float
-    let grainPlate: GrainPlateKind
-    let vignette: Float
+    let clarity: Float?
+    let grain: Float?
+    let grainPlate: GrainPlateKind?
+    let vignette: Float?
+    let grade: String?
+    let lutImage: String?
+    let strength: Float?
 
     var look: Look {
-        Look(
+        if id == Look.originalID {
+            return Look(id: id, name: name, about: about, grade: .none)
+        }
+        if grade == "lutImage" {
+            return Look(
+                id: id,
+                name: name,
+                about: about,
+                grade: .lutImage(LUTImageGrade(
+                    imageName: lutImage ?? id,
+                    strength: strength ?? 1
+                ))
+            )
+        }
+        return Look(
             id: id,
             name: name,
             about: about,
-            clarity: clarity,
-            grain: grain,
-            grainPlate: grainPlate,
-            vignette: vignette
+            grade: .colorCube(ColorCubeGrade(
+                cubeName: id,
+                clarity: clarity ?? 0,
+                grain: grain ?? 0,
+                grainPlate: grainPlate ?? .none,
+                vignette: vignette ?? 0
+            ))
         )
     }
 }

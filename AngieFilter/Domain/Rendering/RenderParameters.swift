@@ -8,12 +8,19 @@ struct LookAdjustment: Equatable, Sendable {
     var vignette: Float = 0
 
     static func baseline(for look: Look) -> LookAdjustment {
-        LookAdjustment(
-            intensity: 1,
-            clarity: look.clarity,
-            grain: look.grain,
-            vignette: look.vignette
-        )
+        switch look.grade {
+        case .none:
+            return LookAdjustment()
+        case .colorCube(let grade):
+            return LookAdjustment(
+                intensity: 1,
+                clarity: grade.clarity,
+                grain: grade.grain,
+                vignette: grade.vignette
+            )
+        case .lutImage(let grade):
+            return LookAdjustment(intensity: grade.strength)
+        }
     }
 }
 

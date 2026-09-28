@@ -1,6 +1,19 @@
 # 采集
 
-采集在 `CameraSessionController`。预览画到 `MTKView`（`PreviewMetalView`），不用 `AVCaptureVideoPreviewLayer`。工作色彩空间是 Display P3：`CIContext` 的 `workingColorSpace`，以及色彩立方体滤镜的 `inputColorSpace`，都是 Display P3。
+采集在 `CameraSessionController`。预览画到 `MTKView`（`PreviewMetalView`），不用 `AVCaptureVideoPreviewLayer`。工作色彩空间是 Display P3：`CIContext` 的 `workingColorSpace`，以及色彩立方体滤镜的 `inputColorSpace`，都是 Display P3。LUT 图按原字节采样，不在采集这一层做转换。渲染怎么套风格见 [rendering.md](rendering.md)。
+
+```mermaid
+flowchart TB
+  device["后置虚拟相机或前置广角"] --> session["AVCaptureSession<br/>预设 .photo"]
+  session --> video["视频输出 32BGRA<br/>videoQueue"]
+  session --> photo["照片输出"]
+  video --> maker["FrameImageMaker 几何"]
+  photo --> maker
+  maker --> grade["GradeApplicator"]
+  grade --> preview["PreviewMetalView"]
+  grade --> review["确认页 UIImage"]
+  review --> library["PhotoLibraryStore<br/>HEIC，失败则 JPEG"]
+```
 
 ## 会话
 
