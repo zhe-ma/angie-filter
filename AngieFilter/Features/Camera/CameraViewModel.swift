@@ -25,6 +25,17 @@ final class CameraViewModel: ObservableObject {
 
     let looks = LookLibrary.looks
     let session = CameraSessionController()
+    let dualSession: DualSessionController
+
+    @Published private(set) var dualAvailable = DualSessionController.isSupported
+    @Published private(set) var dualOn = false
+    @Published var dualLayout: DualLayout = .stacked
+    @Published var dualLead: CameraFacing = .back
+    @Published var dualSelected: CameraFacing = .back
+    @Published var pipCorner: PipCorner = .bottomRight
+    @Published var pipLeft: CGFloat?
+    @Published var pipTop: CGFloat?
+    @Published var veil: Float = 0.45
 
     private var savedAdjustments: [Look.ID: LookAdjustment] = [:]
     private var thumbnailWork: DispatchWorkItem?
@@ -37,17 +48,42 @@ final class CameraViewModel: ObservableObject {
     private let places = PlaceReader()
     private var pinchStart: CGFloat = 1
     private var isPinching = false
+    private var dualTransition = false
+    private var singleLookID = Look.originalID
+    private var singleFamilyID = "original"
+    private var singleSaved: [Look.ID: LookAdjustment] = [:]
+    private var singleDraft = LookAdjustment()
+    private var singleAdjustOpen = false
+    private var dualLook: [CameraFacing: Look.ID] = [.back: Look.originalID, .front: Look.originalID]
+    private var dualFamily: [CameraFacing: String] = [.back: "original", .front: "original"]
+    private var dualSaved: [CameraFacing: [Look.ID: LookAdjustment]] = [:]
+    private var dualDraft: [CameraFacing: LookAdjustment] = [:]
+    private var dualAdjustOpen: [CameraFacing: Bool] = [:]
+    private var insetDragOrigin: CGPoint?
+    private var insetDragSize = CGSize.zero
+    private var insetDragMoved = false
+    private var insetDragDecided = false
 
     init() {
+        dualSession = DualSessionController(previewView: session.previewView)
         session.onStatus = { [weak self] status in
-            self?.status = status
+            guard let self, !self.dualOn else { return }
+            self.status = status
         }
         session.onPhoto = { [weak self] image in
-            self?.reviewImage = image
-            self?.closeFilters()
-            self?.frameOpen = false
+            self?.showReview(image)
         }
         session.onFailure = { [weak self] message in
+            self?.banner = message
+        }
+        dualSession.onStatus = { [weak self] status in
+            guard let self, self.dualOn else { return }
+            self.status = status
+        }
+        dualSession.onPhoto = { [weak self] image in
+            self?.showReview(image)
+        }
+        dualSession.onFailure = { [weak self] message in
             self?.banner = message
         }
         places.onPlace = { [weak self] text in
@@ -85,14 +121,118 @@ final class CameraViewModel: ObservableObject {
         syncParameters()
     }
 
+    var flashAvailable: Bool {
+        dualOn || status.facing == .back
+    }
+
     func cycleFlash() {
-        guard status.facing == .back else { return }
-        session.setFlash(status.flashMode.next())
+        guard flashAvailable else { return }
+        let next = status.flashMode.next()
+        if dualOn {
+            dualSession.setFlash(next)
+        } else {
+            session.setFlash(next)
+        }
     }
 
     func flipCamera() {
+        if dualOn {
+            swapLead()
+            return
+        }
         let next: CameraFacing = status.facing == .back ? .front : .back
         session.setFacing(next)
+    }
+
+    func toggleDual() {
+        guard dualAvailable, !dualTransition else { return }
+        dualTransition = true
+        if dualOn {
+            rememberDualLook()
+            dualSession.stop { [weak self] in
+                guard let self else { return }
+                self.dualOn = false
+                self.restoreSingleLook()
+                self.session.start()
+                self.syncParameters()
+                self.dualTransition = false
+                if self.filtersOpen { self.refreshThumbnails() }
+            }
+        } else {
+            rememberSingleLook()
+            applyDualLook()
+            dualOn = true
+            dualSession.setSelected(dualSelected)
+            dualSession.setFlash(status.flashMode)
+            syncParameters()
+            session.stop { [weak self] in
+                guard let self else { return }
+                self.dualSession.start { [weak self] running in
+                    guard let self else { return }
+                    if !running {
+                        self.dualOn = false
+                        self.restoreSingleLook()
+                        self.session.start()
+                        self.banner = "这台设备不能同时打开前后镜头"
+                    }
+                    self.syncParameters()
+                    self.dualTransition = false
+                    if self.filtersOpen { self.refreshThumbnails() }
+                }
+            }
+        }
+    }
+
+    func setDualLayout(_ layout: DualLayout) {
+        guard dualLayout != layout else { return }
+        dualLayout = layout
+        syncParameters()
+    }
+
+    func swapLead() {
+        dualLead = dualLead == .back ? .front : .back
+        syncParameters()
+    }
+
+    func cyclePipCorner() {
+        pipCorner = pipCorner.next()
+        pipLeft = nil
+        pipTop = nil
+        syncParameters()
+    }
+
+    func setVeil(_ value: Float) {
+        veil = min(max(value, 0.2), 0.8)
+        syncParameters()
+    }
+
+    func selectCamera(_ facing: CameraFacing) {
+        guard dualOn, dualSelected != facing else { return }
+        rememberDualLook()
+        dualSelected = facing
+        lookID = dualLook[facing] ?? Look.originalID
+        familyID = dualFamily[facing] ?? LookLibrary.family(containing: lookID).id
+        savedAdjustments = dualSaved[facing] ?? [:]
+        adjustOpen = dualAdjustOpen[facing] ?? false
+        if adjustOpen {
+            draft = dualDraft[facing] ?? .baseline(for: selectedLook)
+        }
+        adjustmentNotice = nil
+        dualSession.setSelected(facing)
+        syncParameters()
+        if filtersOpen { refreshThumbnails() }
+    }
+
+    func dualGeometrySettings() -> DualSettings {
+        DualSettings(
+            layout: dualLayout,
+            lead: dualLead,
+            selected: dualSelected,
+            pipCorner: pipCorner,
+            pipLeft: pipLeft,
+            pipTop: pipTop,
+            veil: veil
+        )
     }
 
     var previewWidthOverHeight: CGFloat {
@@ -241,6 +381,57 @@ final class CameraViewModel: ObservableObject {
         syncParameters()
     }
 
+    func previewDragChanged(start: CGPoint, current: CGPoint, in viewSize: CGSize) {
+        guard !isPinching else { return }
+        guard dualOn, dualLayout == .pip || dualLayout == .circle else { return }
+        let photo = photoRect(in: viewSize)
+        let startLocal = CGPoint(x: start.x - photo.minX, y: start.y - photo.minY)
+        let currentLocal = CGPoint(x: current.x - photo.minX, y: current.y - photo.minY)
+        if !insetDragDecided {
+            insetDragDecided = true
+            let geometry = DualFrameGeometry.make(canvas: photo.size, settings: dualGeometrySettings())
+            guard geometry.other.contains(startLocal) else { return }
+            insetDragOrigin = geometry.other.frame.origin
+            insetDragSize = geometry.other.frame.size
+        }
+        guard let origin = insetDragOrigin else { return }
+        let dx = currentLocal.x - startLocal.x
+        let dy = currentLocal.y - startLocal.y
+        if !insetDragMoved, dx * dx + dy * dy < 64 { return }
+        insetDragMoved = true
+        var left = origin.x + dx
+        var top = origin.y + dy
+        left = min(max(0, left), max(0, photo.width - insetDragSize.width))
+        top = min(max(0, top), max(0, photo.height - insetDragSize.height))
+        guard photo.width > 1, photo.height > 1 else { return }
+        pipLeft = left / photo.width
+        pipTop = top / photo.height
+        syncParameters()
+    }
+
+    func previewDragEnded(start: CGPoint, current: CGPoint, in viewSize: CGSize) {
+        let movedInset = insetDragMoved
+        insetDragOrigin = nil
+        insetDragSize = .zero
+        insetDragMoved = false
+        insetDragDecided = false
+        if isPinching || movedInset { return }
+        let dx = current.x - start.x
+        let dy = current.y - start.y
+        if dx * dx + dy * dy > 64 { return }
+        if filtersOpen || frameOpen {
+            dismissPanels()
+        }
+        let photo = photoRect(in: viewSize)
+        guard photo.contains(start) else { return }
+        let local = CGPoint(x: start.x - photo.minX, y: start.y - photo.minY)
+        if dualOn {
+            focusDual(local: local, photoSize: photo.size, displayPoint: start)
+        } else {
+            focus(viewPoint: local, in: photo.size, displayPoint: start)
+        }
+    }
+
     func focus(viewPoint: CGPoint, in size: CGSize, displayPoint: CGPoint) {
         guard size.width > 1, size.height > 1 else { return }
         let x = min(max(viewPoint.x / size.width, 0), 1)
@@ -248,23 +439,24 @@ final class CameraViewModel: ObservableObject {
         let devicePoint = status.facing == .front
             ? CGPoint(x: y, y: x)
             : CGPoint(x: y, y: 1 - x)
-        focusPoint = displayPoint
+        showFocus(at: displayPoint)
         session.focus(atDevicePoint: devicePoint)
-        focusClear?.cancel()
-        focusClear = Task {
-            try? await Task.sleep(nanoseconds: 900_000_000)
-            guard !Task.isCancelled else { return }
-            focusPoint = nil
-        }
     }
 
     func pinchChanged(_ scale: CGFloat) {
-        guard status.facing == .back else { return }
         if !isPinching {
             isPinching = true
             pinchStart = status.zoomFactor
         }
-        session.setZoom(factor: pinchStart * scale)
+        insetDragDecided = true
+        insetDragOrigin = nil
+        guard (dualOn ? dualSelected : status.facing) == .back else { return }
+        let factor = pinchStart * scale
+        if dualOn {
+            dualSession.setZoom(factor: factor)
+        } else {
+            session.setZoom(factor: factor)
+        }
         showZoomReadout = true
     }
 
@@ -279,13 +471,22 @@ final class CameraViewModel: ObservableObject {
     }
 
     func zoom(to stop: ZoomStop) {
-        session.setZoom(factor: stop.factor)
+        if dualOn {
+            dualSession.setZoom(factor: stop.factor)
+        } else {
+            session.setZoom(factor: stop.factor)
+        }
         showZoomReadout = true
         pinchEnded()
     }
 
     func capture() {
-        session.capturePhoto()
+        guard !dualTransition else { return }
+        if dualOn {
+            dualSession.capturePhoto()
+        } else {
+            session.capturePhoto()
+        }
     }
 
     func retake() {
@@ -327,17 +528,133 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func syncParameters() {
-        let aspect = aspectRatio
-        let look = selectedLook
-        let adjustment = renderedAdjustment(for: look)
-        session.updateRenderParameters { parameters in
-            parameters.aspectRatio = aspect
-            parameters.lookID = look.id
-            parameters.adjustment = adjustment
-            parameters.frame = frame
-            parameters.frameDate = previewDate
-            parameters.framePlace = placeText
+        if dualOn {
+            let settings = currentDualSettings()
+            let aspect = aspectRatio
+            let framed = frame
+            let date = previewDate
+            let place = placeText
+            dualSession.updateRenderParameters { parameters in
+                parameters.aspectRatio = aspect
+                parameters.frame = framed
+                parameters.frameDate = date
+                parameters.framePlace = place
+                parameters.dual = settings
+            }
+        } else {
+            let aspect = aspectRatio
+            let look = selectedLook
+            let adjustment = renderedAdjustment(for: look)
+            session.updateRenderParameters { parameters in
+                parameters.aspectRatio = aspect
+                parameters.lookID = look.id
+                parameters.adjustment = adjustment
+                parameters.frame = frame
+                parameters.frameDate = previewDate
+                parameters.framePlace = placeText
+                parameters.dual = nil
+            }
         }
+    }
+
+    private func currentDualSettings() -> DualSettings {
+        dualLook[dualSelected] = lookID
+        dualFamily[dualSelected] = familyID
+        dualSaved[dualSelected] = savedAdjustments
+        var settings = dualGeometrySettings()
+        settings.veil = min(max(veil, 0.2), 0.8)
+        settings.backLookID = dualLook[.back] ?? Look.originalID
+        settings.frontLookID = dualLook[.front] ?? Look.originalID
+        settings.backAdjustment = adjustment(for: .back)
+        settings.frontAdjustment = adjustment(for: .front)
+        return settings
+    }
+
+    private func adjustment(for facing: CameraFacing) -> LookAdjustment {
+        let id = facing == dualSelected ? lookID : (dualLook[facing] ?? Look.originalID)
+        let look = LookLibrary.look(id: id)
+        guard !look.isOriginal else { return LookAdjustment() }
+        if facing == dualSelected {
+            return renderedAdjustment(for: look)
+        }
+        return dualSaved[facing]?[id] ?? .baseline(for: look)
+    }
+
+    private func rememberSingleLook() {
+        singleLookID = lookID
+        singleFamilyID = familyID
+        singleSaved = savedAdjustments
+        singleDraft = draft
+        singleAdjustOpen = adjustOpen
+    }
+
+    private func restoreSingleLook() {
+        lookID = singleLookID
+        familyID = singleFamilyID
+        savedAdjustments = singleSaved
+        draft = singleDraft
+        adjustOpen = singleAdjustOpen
+        adjustmentNotice = nil
+    }
+
+    private func rememberDualLook() {
+        dualLook[dualSelected] = lookID
+        dualFamily[dualSelected] = familyID
+        dualSaved[dualSelected] = savedAdjustments
+        dualDraft[dualSelected] = draft
+        dualAdjustOpen[dualSelected] = adjustOpen
+    }
+
+    private func applyDualLook() {
+        lookID = dualLook[dualSelected] ?? Look.originalID
+        familyID = dualFamily[dualSelected] ?? LookLibrary.family(containing: lookID).id
+        savedAdjustments = dualSaved[dualSelected] ?? [:]
+        adjustOpen = dualAdjustOpen[dualSelected] ?? false
+        if adjustOpen {
+            draft = dualDraft[dualSelected] ?? .baseline(for: selectedLook)
+        }
+        adjustmentNotice = nil
+    }
+
+    private func focusDual(local: CGPoint, photoSize: CGSize, displayPoint: CGPoint) {
+        let geometry = DualFrameGeometry.make(canvas: photoSize, settings: dualGeometrySettings())
+        switch geometry.hit(local) {
+        case .none:
+            return
+        case .blend(let frame):
+            focusPane(frame, facing: dualSelected, local: local, displayPoint: displayPoint)
+        case .pane(let facing, let frame):
+            if facing != dualSelected {
+                selectCamera(facing)
+            }
+            focusPane(frame, facing: facing, local: local, displayPoint: displayPoint)
+        }
+    }
+
+    private func focusPane(_ frame: CGRect, facing: CameraFacing, local: CGPoint, displayPoint: CGPoint) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        let point = CGPoint(
+            x: min(max((local.x - frame.minX) / frame.width, 0), 1),
+            y: min(max((local.y - frame.minY) / frame.height, 0), 1)
+        )
+        showFocus(at: displayPoint)
+        dualSession.focus(atCellPoint: point, facing: facing, cellAspect: frame.width / frame.height)
+    }
+
+    private func showFocus(at displayPoint: CGPoint) {
+        focusPoint = displayPoint
+        focusClear?.cancel()
+        focusClear = Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else { return }
+            focusPoint = nil
+        }
+    }
+
+    private func showReview(_ image: UIImage) {
+        reviewImage = image
+        closeFilters()
+        frameOpen = false
     }
 
     private func refreshPlaceTracking() {
@@ -352,7 +669,8 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func refreshThumbnails() {
-        guard filtersOpen, let source = session.currentThumbnailSource() else { return }
+        let source = dualOn ? dualSession.currentThumbnailSource() : session.currentThumbnailSource()
+        guard filtersOpen, let source else { return }
         thumbnailWork?.cancel()
         let looks = visibleLooks
         var work: DispatchWorkItem?

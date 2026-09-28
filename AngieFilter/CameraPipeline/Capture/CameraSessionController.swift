@@ -55,12 +55,16 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
-    func stop() {
+    func stop(completion: (() -> Void)? = nil) {
         sessionQueue.async { [weak self] in
-            guard let self, self.session.isRunning else { return }
-            self.session.stopRunning()
-            self.status.isRunning = false
-            self.publishStatus()
+            if let self, self.session.isRunning {
+                self.session.stopRunning()
+                self.status.isRunning = false
+                self.publishStatus()
+            }
+            if let completion {
+                DispatchQueue.main.async(execute: completion)
+            }
         }
     }
 

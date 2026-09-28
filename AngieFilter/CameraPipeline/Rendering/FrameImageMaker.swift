@@ -21,6 +21,23 @@ enum FrameImageMaker {
         )
     }
 
+    /// Upright, optionally mirrored, not yet cropped to an aspect.
+    static func upright(from pixelBuffer: CVPixelBuffer, orientation: CGImagePropertyOrientation, mirrorHorizontally: Bool) -> CIImage {
+        var image = shiftedToOrigin(CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation))
+        if mirrorHorizontally {
+            image = mirror(image)
+        }
+        return image
+    }
+
+    static func upright(from image: CIImage, orientation: CGImagePropertyOrientation, mirrorHorizontally: Bool) -> CIImage {
+        var upright = shiftedToOrigin(image.oriented(orientation))
+        if mirrorHorizontally {
+            upright = mirror(upright)
+        }
+        return upright
+    }
+
     static func thumbnailSource(from image: CIImage, width: CGFloat = 160) -> CIImage {
         let extent = shiftedToOrigin(image).extent
         guard extent.width > 1 else { return image }

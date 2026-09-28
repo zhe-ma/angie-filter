@@ -3,12 +3,15 @@ import CoreGraphics
 enum AspectCrop {
     /// Center crop, applied after the image has been oriented upright.
     static func pixelRect(for aspectRatio: AspectRatio, imageExtent: CGRect) -> CGRect {
+        pixelRect(widthOverHeight: aspectRatio.widthOverHeight, imageExtent: imageExtent)
+    }
+
+    static func pixelRect(widthOverHeight target: CGFloat, imageExtent: CGRect) -> CGRect {
         let width = imageExtent.width
         let height = imageExtent.height
-        guard width > 1, height > 1 else { return imageExtent }
+        guard width > 1, height > 1, target > 0 else { return imageExtent }
 
         let imageRatio = width / height
-        let target = aspectRatio.widthOverHeight
         var crop = imageExtent
 
         if imageRatio > target {

@@ -21,7 +21,7 @@ flowchart TB
   src --> dissolve
 ```
 
-再加一种方案时，在 `LookGrade` 加一个 case，并在 CameraPipeline 加一个 grader。预览、成片和缩略图仍只调用 `GradeApplicator.apply`。
+再加一种方案时，在 `LookGrade` 加一个 case，并在 CameraPipeline 加一个 grader。预览、成片和缩略图仍只调用 `GradeApplicator.apply`。海报质感不需要新方案，见 [poster.md](poster.md)。
 
 配方和 LUT 的差别：
 

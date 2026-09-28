@@ -46,6 +46,8 @@ struct RenderParameters: Equatable, Sendable {
     var orientation: CGImagePropertyOrientation = .right
     var mirrorHorizontally = false
     var quality: RenderQuality = .preview
+    /// Set while both cameras are composited. Nil on the single-camera path.
+    var dual: DualSettings?
 }
 
 enum RenderQuality: Equatable, Sendable {

@@ -180,7 +180,45 @@
       linear-gradient(#3d7a44, #3d7a44) 78% 64% / 90px 110px no-repeat,
       linear-gradient(180deg, #67a4dc 0 46%, #9ec0df 46% 54%, #6d8d48 54% 72%, #8a6246 72% 100%);
   }
+  .art.face {
+    background:
+      radial-gradient(circle at 50% 46%, #f0c2a4 0 58px, transparent 60px),
+      radial-gradient(circle at 50% 30%, #3a2a24 0 42px, transparent 44px),
+      linear-gradient(#e7d3c4, #e7d3c4) 50% 62% / 86px 90px no-repeat,
+      linear-gradient(180deg, #d9c7b8 0 36%, #8d6b58 36% 100%);
+  }
   .art.mirror { transform: translate(-50%, -50%) scale(var(--zoom, 1)) scaleX(-1); }
+  .dual-stage { position: absolute; inset: 0; z-index: 1; }
+  .dual-stage[hidden] { display: none; }
+  .dual-stage.ring { box-shadow: inset 0 0 0 2px #fff; }
+  .pane { position: absolute; overflow: hidden; background: #111; }
+  .pane.on { box-shadow: inset 0 0 0 2px #fff; }
+  .pane.float { cursor: grab; touch-action: none; }
+  .pane .stack { position: absolute; inset: 0; }
+  .top-actions { display: flex; align-items: center; gap: 4px; }
+  .text-chip {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 16px;
+    background: rgba(255,255,255,.18);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .text-chip.on { background: #fff; color: #111; }
+  .dual-bar { width: min(360px, 92%); display: flex; flex-direction: column; gap: 8px; }
+  .dual-bar[hidden] { display: none; }
+  .dual-extra { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; color: rgba(255,255,255,.84); }
+  .dual-extra input[type="range"] { flex: 1; accent-color: #fff; }
+  .cam-switch { display: flex; gap: 6px; }
+  .cam-switch[hidden] { display: none; }
+  .cam-switch button {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 13px;
+    background: rgba(255,255,255,.12);
+    font-size: 12px;
+  }
+  .cam-switch button.active { background: #fff; color: #111; font-weight: 600; }
   .graded { opacity: var(--mix, 1); filter: var(--grade, none); }
   .grain {
     position: absolute;
@@ -540,9 +578,12 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
           </button>
           <button class="aspect-btn" id="aspect" data-action="aspect">4:3</button>
-          <button class="icon-btn" id="flip" data-action="flip" aria-label="翻转摄像头">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8a8 8 0 0 1 14-2M20 16a8 8 0 0 1-14 2"/><path d="M18 2v4h-4M6 22v-4h4"/></svg>
-          </button>
+          <div class="top-actions">
+            <button class="text-chip" id="dual-toggle" data-action="dual">双摄</button>
+            <button class="icon-btn" id="flip" data-action="flip" aria-label="翻转摄像头">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8a8 8 0 0 1 14-2M20 16a8 8 0 0 1-14 2"/><path d="M18 2v4h-4M6 22v-4h4"/></svg>
+            </button>
+          </div>
         </header>
         <div class="finder" id="finder">
           <div class="frame" id="frame">
@@ -555,6 +596,28 @@
                 <div class="halation" id="halation"></div>
                 <div class="vignette" id="vignette"></div>
               </div>
+              <div class="dual-stage" id="dual-stage" hidden>
+                <div class="pane" data-cam="back">
+                  <div class="stack" id="stack-back">
+                    <div class="art"></div>
+                    <div class="art graded"></div>
+                    <div class="grain"></div>
+                    <div class="fade-wash"></div>
+                    <div class="halation"></div>
+                    <div class="vignette"></div>
+                  </div>
+                </div>
+                <div class="pane" data-cam="front">
+                  <div class="stack" id="stack-front">
+                    <div class="art face"></div>
+                    <div class="art face graded"></div>
+                    <div class="grain"></div>
+                    <div class="fade-wash"></div>
+                    <div class="halation"></div>
+                    <div class="vignette"></div>
+                  </div>
+                </div>
+              </div>
               <div class="zoom-hud" id="zoom-hud">1×</div>
               <div class="zoom-row" id="zoom-row"></div>
             </div>
@@ -566,6 +629,16 @@
           </div>
         </div>
         <footer class="dock">
+          <div class="dual-bar" id="dual-bar" hidden>
+            <div class="frame-choices" id="dual-layouts">
+              <button data-action="dual-layout" data-layout="stacked">上下</button>
+              <button data-action="dual-layout" data-layout="side">左右</button>
+              <button data-action="dual-layout" data-layout="pip">画中画</button>
+              <button data-action="dual-layout" data-layout="circle">圆窗</button>
+              <button data-action="dual-layout" data-layout="blend">叠加</button>
+            </div>
+            <div class="dual-extra" id="dual-extra"></div>
+          </div>
           <div class="frame-panel" id="frame-panel" hidden>
             <div class="frame-choices" id="frame-choices">
               <button data-action="frame-style" data-style="off">关闭</button>
@@ -590,6 +663,10 @@
           </div>
           <div class="filter-panel" id="filter-panel" hidden>
             <div class="adjust-head">
+              <div class="cam-switch" id="cam-switch" hidden>
+                <button data-action="cam" data-cam="back">后置</button>
+                <button data-action="cam" data-cam="front">前置</button>
+              </div>
               <div class="look-name" id="look-name">原图</div>
               <span class="adjust-notice" id="adjust-notice"></span>
               <button class="adjust-toggle" id="adjust-toggle" data-action="adjust" hidden>调节</button>
@@ -638,7 +715,7 @@
         </div>
       </section>
     </div>
-    <div class="caption">左侧「相框」选样式，右侧「滤镜」选风格。一次只展开一个面板。</div>
+    <div class="caption">顶栏「双摄」同时开前后镜头。左侧「相框」，右侧「滤镜」。</div>
   </div>
 
   <aside class="notes">
@@ -786,7 +863,21 @@ const state = {
   aspect: "4:3",
   flash: "off",
   facing: "back",
-  zoom: 1
+  zoom: 1,
+  dual: false,
+  dualLayout: "stacked",
+  leadCam: "back",
+  pipCorner: 0,
+  pipLeft: null,
+  pipTop: null,
+  veil: 0.45,
+  selectedCam: "back",
+  camLook: { back: "original", front: "original" },
+  camFamily: { back: "original", front: "original" },
+  camMemory: { back: {}, front: {} },
+  zoomBack: 1,
+  singleSnapshot: null,
+  dualReady: false
 };
 
 const hints = {
@@ -794,6 +885,9 @@ const hints = {
     "点画面对焦。点在相框边上只收起面板",
     "点左侧「相框」：留白、暗房、相纸、窗线、角标、压底、拍立得、印记",
     "窗线、角标、压底盖在照片上，不把画面撑大。角标、压底、拍立得、印记可以写型号、地点、日期和一行短句",
+    "顶栏「双摄」同时开前后镜头：上下、左右、画中画、圆窗、叠加",
+    "点一路选中它。滤镜和变焦只改这一路。叠加时用「后置」「前置」换镜头",
+    "画中画和圆窗的小窗可以拖动，松手后停在画面里。换角会吸回四个角",
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
     "上面点分类，只换下面这一排；原图单独在最前",
     "缩略图都是当前画面，点一下立即套用",
@@ -833,7 +927,21 @@ function currentLook() {
   }
   return plain;
 }
-function zoomStops() { return state.facing === "back" ? [0.5, 1, 2] : [1]; }
+function zoomStops() {
+  if (state.dual) return state.selectedCam === "back" ? [1, 2] : [1];
+  return state.facing === "back" ? [0.5, 1, 2] : [1];
+}
+function adjustmentMemory() {
+  return state.dual ? state.camMemory[state.selectedCam] : state.memory;
+}
+function lookById(id) {
+  for (const family of catalog) {
+    const found = family.looks.find((look) => look.id === id);
+    if (found) return found;
+  }
+  return catalog[0].looks[0];
+}
+function otherCam(cam) { return cam === "back" ? "front" : "back"; }
 
 function explain(text) { $("now").textContent = text; }
 
@@ -894,10 +1002,14 @@ function baselineAdjust(look) {
 function activeAdjust(look) {
   if (look.id === "original") return baselineAdjust(look);
   if (state.adjustOpen) return state.draft;
-  return state.memory[look.id] || baselineAdjust(look);
+  return adjustmentMemory()[look.id] || baselineAdjust(look);
 }
-function applyGrade(root, look) {
-  const adjust = activeAdjust(look);
+function applyGrade(root, look, options = {}) {
+  const memory = options.memory || adjustmentMemory();
+  const drafting = options.drafting ?? state.adjustOpen;
+  const adjust = look.id === "original"
+    ? baselineAdjust(look)
+    : (drafting ? state.draft : (memory[look.id] || baselineAdjust(look)));
   const mix = look.id === "original" ? 0 : adjust.intensity / 100;
   root.style.setProperty("--grade", look.grade);
   root.style.setProperty("--mix", String(mix));
@@ -905,8 +1017,9 @@ function applyGrade(root, look) {
   root.style.setProperty("--fade", String((adjust.fade / 100) * mix * 0.55));
   root.style.setProperty("--halo", String((adjust.halation / 100) * mix));
   root.style.setProperty("--vignette", String((adjust.vignette / 100) * mix));
-  root.style.setProperty("--zoom", String(state.zoom));
-  root.querySelectorAll(".art").forEach((art) => art.classList.toggle("mirror", state.facing === "front"));
+  root.style.setProperty("--zoom", String(options.zoom ?? state.zoom));
+  const mirror = options.mirror ?? state.facing === "front";
+  root.querySelectorAll(".art").forEach((art) => art.classList.toggle("mirror", mirror));
 }
 
 function renderAdjust() {
@@ -931,11 +1044,136 @@ function renderAdjust() {
     }
   }
 }
+function placePane(pane, box) {
+  pane.style.top = box.top || "auto";
+  pane.style.left = box.left || "auto";
+  pane.style.right = box.right || "auto";
+  pane.style.bottom = box.bottom || "auto";
+  pane.style.width = box.width || "auto";
+  pane.style.height = box.height || "auto";
+  pane.style.opacity = box.opacity || "1";
+  pane.style.zIndex = box.zIndex || "1";
+  pane.style.borderRadius = box.radius || "0";
+  pane.style.aspectRatio = box.ratio || "auto";
+}
+function insetBox(stage) {
+  const rect = stage.getBoundingClientRect();
+  const width = rect.width * 0.36;
+  const height = state.dualLayout === "circle" ? width : rect.height * 0.3;
+  if (width < 1 || height < 1) return null;
+  let left;
+  let top;
+  if (state.pipLeft == null || state.pipTop == null) {
+    const corner = state.pipCorner % 4;
+    const atRight = corner === 0 || corner === 3;
+    const atBottom = corner === 0 || corner === 1;
+    left = atRight ? rect.width - rect.width * 0.05 - width : rect.width * 0.05;
+    top = atBottom ? rect.height - rect.height * 0.16 - height : rect.height * 0.06;
+  } else {
+    left = state.pipLeft * rect.width;
+    top = state.pipTop * rect.height;
+  }
+  left = Math.min(Math.max(0, left), rect.width - width);
+  top = Math.min(Math.max(0, top), rect.height - height);
+  return { left, top, width, height };
+}
+function layoutDual(stage) {
+  if (!stage) return;
+  const lead = state.leadCam;
+  const other = otherCam(lead);
+  const leadPane = stage.querySelector(`[data-cam="${lead}"]`);
+  const otherPane = stage.querySelector(`[data-cam="${other}"]`);
+  const full = { top: "0", left: "0", right: "0", bottom: "0", width: "auto", height: "auto" };
+  stage.classList.toggle("ring", state.dualLayout === "blend");
+  stage.querySelectorAll(".pane").forEach((pane) => pane.classList.remove("float"));
+  if (state.dualLayout === "stacked") {
+    placePane(leadPane, { top: "0", left: "0", width: "100%", height: "50%" });
+    placePane(otherPane, { top: "50%", left: "0", width: "100%", height: "50%" });
+  } else if (state.dualLayout === "side") {
+    placePane(leadPane, { top: "0", left: "0", width: "50%", height: "100%" });
+    placePane(otherPane, { left: "50%", top: "0", width: "50%", height: "100%" });
+  } else if (state.dualLayout === "pip" || state.dualLayout === "circle") {
+    placePane(leadPane, full);
+    const box = insetBox(stage);
+    if (box) {
+      otherPane.classList.add("float");
+      placePane(otherPane, {
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+        radius: state.dualLayout === "circle" ? "50%" : "10px",
+        zIndex: "2"
+      });
+    }
+  } else {
+    placePane(leadPane, { ...full, zIndex: "1" });
+    placePane(otherPane, { ...full, opacity: String(state.veil), zIndex: "2" });
+  }
+  stage.querySelectorAll(".pane").forEach((pane) => {
+    pane.classList.toggle("on", state.dualLayout !== "blend" && pane.dataset.cam === state.selectedCam);
+  });
+}
+function renderDualBar() {
+  $("dual-bar").hidden = !state.dual;
+  $("dual-toggle").classList.toggle("on", state.dual);
+  document.querySelectorAll("#dual-layouts button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.layout === state.dualLayout);
+  });
+  const extra = $("dual-extra");
+  if (!state.dual) {
+    extra.innerHTML = "";
+    return;
+  }
+  if (state.dualLayout === "blend") {
+    extra.innerHTML = `<span>透明度</span><input id="veil" type="range" min="20" max="80" value="${Math.round(state.veil * 100)}"><button data-action="swap-layer">换层</button>`;
+    return;
+  }
+  if (state.dualLayout === "pip" || state.dualLayout === "circle") {
+    extra.innerHTML = `<button data-action="pip-corner">换角</button><button data-action="swap-lead">交换</button>`;
+    return;
+  }
+  extra.innerHTML = `<button data-action="swap-lead">交换</button>`;
+}
+function renderDual() {
+  $("stack").hidden = state.dual;
+  $("dual-stage").hidden = !state.dual;
+  renderDualBar();
+  if (!state.dual) return;
+  layoutDual($("dual-stage"));
+  applyGrade($("stack-back"), lookById(state.camLook.back), {
+    mirror: false,
+    zoom: state.zoomBack,
+    memory: state.camMemory.back,
+    drafting: state.adjustOpen && state.selectedCam === "back"
+  });
+  applyGrade($("stack-front"), lookById(state.camLook.front), {
+    mirror: true,
+    zoom: 1,
+    memory: state.camMemory.front,
+    drafting: state.adjustOpen && state.selectedCam === "front"
+  });
+}
+function useCamera(cam) {
+  state.selectedCam = cam;
+  state.lookId = state.camLook[cam];
+  state.familyId = state.camFamily[cam];
+  state.adjustOpen = false;
+  state.notice = "";
+  if (cam === "front") state.zoom = 1;
+  else state.zoom = state.zoomBack;
+}
 function renderLook() {
   const look = currentLook();
-  $("look-name").textContent = look.name;
+  const camName = state.selectedCam === "front" ? "前置" : "后置";
+  $("look-name").textContent = state.dual && state.filtersOpen ? look.name : (state.dual ? `${camName} · ${look.name}` : look.name);
+  $("cam-switch").hidden = !(state.dual && state.filtersOpen);
+  document.querySelectorAll("#cam-switch button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.cam === state.selectedCam);
+  });
   renderAdjust();
-  applyGrade($("stack"), look);
+  renderDual();
+  if (!state.dual) applyGrade($("stack"), look);
   document.querySelectorAll(".look").forEach((node) => {
     node.classList.toggle("selected", node.dataset.id === look.id);
   });
@@ -972,7 +1210,8 @@ function renderStrip() {
 
 function renderZoom() {
   const stops = zoomStops();
-  if (state.facing === "front") state.zoom = 1;
+  if (state.dual) state.zoom = state.selectedCam === "front" ? 1 : state.zoomBack;
+  else if (state.facing === "front") state.zoom = 1;
   $("zoom-row").innerHTML = stops.map((stop) => {
     const active = Math.abs(state.zoom - stop) < 0.05;
     return `<button data-action="zoom" data-zoom="${stop}" class="${active ? "active" : ""}">${stop}</button>`;
@@ -988,8 +1227,9 @@ function trimZoom(value) {
 
 function renderChrome() {
   $("aspect").textContent = state.aspect;
-  $("flash").disabled = state.facing === "front";
-  $("flash").style.opacity = state.flash === "off" || state.facing === "front" ? .55 : 1;
+  const frontOnly = !state.dual && state.facing === "front";
+  $("flash").disabled = frontOnly;
+  $("flash").style.opacity = state.flash === "off" || frontOnly ? .55 : 1;
   const flashTitle = { off: "闪光灯关", on: "闪光灯开", auto: "闪光灯自动" };
   $("flash").setAttribute("aria-label", state.facing === "front" ? "前置没有闪光灯" : flashTitle[state.flash]);
 }
@@ -1134,7 +1374,19 @@ function paintReview() {
   frame.style.height = `${height}px`;
   applyPads(frame);
   fillCaption(frame.querySelector(".caption-bar"), height * geo.padBottom);
-  applyGrade($("review-stack"), look);
+  if (state.dual) {
+    $("review-stack").hidden = true;
+    frame.querySelector(".photo").insertAdjacentHTML("beforeend", `
+      <div class="dual-stage" id="review-dual">
+        <div class="pane" data-cam="back"><div class="stack" id="review-back"><div class="art"></div><div class="art graded"></div><div class="grain"></div><div class="fade-wash"></div><div class="halation"></div><div class="vignette"></div></div></div>
+        <div class="pane" data-cam="front"><div class="stack" id="review-front"><div class="art face"></div><div class="art face graded"></div><div class="grain"></div><div class="fade-wash"></div><div class="halation"></div><div class="vignette"></div></div></div>
+      </div>`);
+    layoutDual($("review-dual"));
+    applyGrade($("review-back"), lookById(state.camLook.back), { mirror: false, zoom: state.zoomBack, memory: state.camMemory.back, drafting: false });
+    applyGrade($("review-front"), lookById(state.camLook.front), { mirror: true, zoom: 1, memory: state.camMemory.front, drafting: false });
+  } else {
+    applyGrade($("review-stack"), look);
+  }
 }
 
 function flashOverlay() {
@@ -1167,6 +1419,10 @@ function onLook(id) {
     }
   } else {
     state.lookId = id;
+    if (state.dual) {
+      state.camLook[state.selectedCam] = id;
+      state.camFamily[state.selectedCam] = state.familyId;
+    }
     state.adjustOpen = false;
     state.notice = "";
     explain(id === "original"
@@ -1231,9 +1487,12 @@ $("phone").addEventListener("click", (event) => {
     onLook(target.dataset.id);
   } else if (action === "zoom") {
     state.zoom = Number(target.dataset.zoom);
+    if (state.dual && state.selectedCam === "back") state.zoomBack = state.zoom;
     renderZoom();
     renderLook();
-    explain(`变焦到 ${trimZoom(state.zoom)}×。这是镜头倍数，不是把照片放大裁切。`);
+    explain(state.dual && state.selectedCam === "front"
+      ? "前置在双摄里是 1×。"
+      : `变焦到 ${trimZoom(state.zoom)}×。这是镜头倍数，不是把照片放大裁切。`);
   } else if (action === "aspect") {
     const order = ["4:3", "16:9", "1:1"];
     state.aspect = order[(order.indexOf(state.aspect) + 1) % order.length];
@@ -1247,12 +1506,70 @@ $("phone").addEventListener("click", (event) => {
     const label = { off: "关闭", on: "打开", auto: "自动" };
     explain(`闪光灯${label[state.flash]}。前置摄像头没有这一项。`);
   } else if (action === "flip") {
-    state.facing = state.facing === "back" ? "front" : "back";
-    if (state.facing === "front") state.zoom = 1;
-    renderZoom();
-    renderChrome();
+    if (state.dual) {
+      state.leadCam = otherCam(state.leadCam);
+      renderLook();
+      explain(state.dualLayout === "blend" ? "换了上下层。正在调的镜头没变。" : "交换了两路的位置。正在调的镜头没变。");
+    } else {
+      state.facing = state.facing === "back" ? "front" : "back";
+      if (state.facing === "front") state.zoom = 1;
+      renderZoom();
+      renderChrome();
+      renderLook();
+      explain(state.facing === "front" ? "切到前置。画面镜像，变焦只保留 1×，闪光灯不可用。保存时也会保持这个镜像。" : "切回后置。变焦档位恢复。");
+    }
+  } else if (action === "dual") {
+    if (state.dual) {
+      state.dual = false;
+      const snap = state.singleSnapshot;
+      if (snap) {
+        state.lookId = snap.lookId;
+        state.facing = snap.facing;
+        state.zoom = snap.zoom;
+        state.familyId = snap.familyId;
+      }
+      state.adjustOpen = false;
+      renderZoom();
+      renderChrome();
+      renderLook();
+      explain("回到单摄。进来之前的镜头和滤镜还在。");
+    } else {
+      state.singleSnapshot = { lookId: state.lookId, facing: state.facing, zoom: state.zoom, familyId: state.familyId };
+      if (!state.dualReady) {
+        state.camLook.back = state.lookId;
+        state.camFamily.back = state.familyId;
+        state.zoomBack = state.facing === "back" ? state.zoom : 1;
+        state.dualReady = true;
+      }
+      state.dual = true;
+      state.frameOpen = false;
+      useCamera("back");
+      renderZoom();
+      renderChrome();
+      renderStrip();
+      renderLook();
+      explain("双摄打开。后置和前置同时取景。点一路，滤镜就改那一路。");
+    }
+  } else if (action === "dual-layout") {
+    state.dualLayout = target.dataset.layout;
     renderLook();
-    explain(state.facing === "front" ? "切到前置。画面镜像，变焦只保留 1×，闪光灯不可用。保存时也会保持这个镜像。" : "切回后置。变焦档位恢复。");
+    const names = { stacked: "上下各一半。", side: "左右各一半。", pip: "后置或当前主画面铺满，另一路是矩形小窗。", circle: "小窗收成圆，直径大约是短边的三分之一。", blend: "两路铺满同一张画面，上面一路半透明。" };
+    explain(names[state.dualLayout]);
+  } else if (action === "swap-lead" || action === "swap-layer") {
+    state.leadCam = otherCam(state.leadCam);
+    renderLook();
+    explain(action === "swap-layer" ? "换了谁盖在上面。正在调的镜头没变。" : "交换了两路的位置。");
+  } else if (action === "pip-corner") {
+    state.pipCorner = (state.pipCorner + 1) % 4;
+    state.pipLeft = null;
+    state.pipTop = null;
+    renderLook();
+    explain("小窗吸回下一个角。也可以直接拖动。");
+  } else if (action === "cam") {
+    useCamera(target.dataset.cam);
+    renderZoom();
+    renderStrip();
+    explain(`正在调${target.dataset.cam === "front" ? "前置" : "后置"}。`);
   } else if (action === "shutter") {
     flashOverlay();
     showScreen("review");
@@ -1295,15 +1612,65 @@ $("phone").addEventListener("click", (event) => {
     const look = currentLook();
     const base = baselineAdjust(look);
     const same = ["intensity", "fade", "halation", "clarity", "grain", "vignette"].every((key) => state.draft[key] === base[key]);
-    if (same) delete state.memory[look.id];
-    else state.memory[look.id] = { ...state.draft };
+    const memory = adjustmentMemory();
+    if (same) delete memory[look.id];
+    else memory[look.id] = { ...state.draft };
     state.notice = "已保存";
     renderLook();
     explain(`「${look.name}」的参数已保存在这次打开的内存里。`);
   }
 });
 
+let pipDrag = null;
+function hitInset(pane, x, y) {
+  const rect = pane.getBoundingClientRect();
+  if (state.dualLayout === "circle") {
+    const dx = x - (rect.left + rect.width / 2);
+    const dy = y - (rect.top + rect.height / 2);
+    return dx * dx + dy * dy <= (rect.width / 2) * (rect.width / 2);
+  }
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+$("finder").addEventListener("pointerdown", (event) => {
+  if (!state.dual || (state.dualLayout !== "pip" && state.dualLayout !== "circle")) return;
+  if (event.target.closest("[data-action]")) return;
+  const stage = $("dual-stage");
+  const pane = stage.querySelector(`[data-cam="${otherCam(state.leadCam)}"]`);
+  if (!pane || !hitInset(pane, event.clientX, event.clientY)) return;
+  const box = insetBox(stage);
+  if (!box) return;
+  pipDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: box.left, top: box.top, moved: false };
+  pane.setPointerCapture(event.pointerId);
+});
+$("finder").addEventListener("pointermove", (event) => {
+  if (!pipDrag || event.pointerId !== pipDrag.id) return;
+  const dx = event.clientX - pipDrag.x;
+  const dy = event.clientY - pipDrag.y;
+  if (!pipDrag.moved && dx * dx + dy * dy < 36) return;
+  pipDrag.moved = true;
+  const stage = $("dual-stage");
+  const rect = stage.getBoundingClientRect();
+  const box = insetBox(stage);
+  if (!box) return;
+  const left = Math.min(Math.max(0, pipDrag.left + dx), rect.width - box.width);
+  const top = Math.min(Math.max(0, pipDrag.top + dy), rect.height - box.height);
+  state.pipLeft = left / rect.width;
+  state.pipTop = top / rect.height;
+  layoutDual(stage);
+});
+$("finder").addEventListener("pointerup", (event) => {
+  if (!pipDrag || event.pointerId !== pipDrag.id) return;
+  state.pipMoved = pipDrag.moved;
+  pipDrag = null;
+});
+$("finder").addEventListener("pointercancel", () => { pipDrag = null; });
+
 $("finder").addEventListener("click", (event) => {
+  if (state.pipMoved) {
+    state.pipMoved = false;
+    explain("小窗停在拖开的位置。换角会把它吸回角上。");
+    return;
+  }
   if (event.target.closest("[data-action]")) return;
   const frame = $("frame");
   const photo = $("photo");
@@ -1325,6 +1692,25 @@ $("finder").addEventListener("click", (event) => {
     explain("点在相框边上，只收起面板，不对焦。");
     return;
   }
+  if (state.dual && state.dualLayout !== "blend") {
+    const stage = $("dual-stage");
+    const other = stage.querySelector(`[data-cam="${otherCam(state.leadCam)}"]`);
+    const circular = state.dualLayout === "circle";
+    const rect = other.getBoundingClientRect();
+    let hitOther = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    if (hitOther && circular) {
+      const dx = x - (rect.left + rect.width / 2);
+      const dy = y - (rect.top + rect.height / 2);
+      hitOther = dx * dx + dy * dy <= (rect.width / 2) * (rect.width / 2);
+    }
+    const cam = hitOther ? otherCam(state.leadCam) : state.leadCam;
+    if (cam !== state.selectedCam) {
+      useCamera(cam);
+      renderZoom();
+      if (state.filtersOpen) renderStrip();
+      else renderLook();
+    }
+  }
   photo.querySelectorAll(".focus").forEach((node) => node.remove());
   const mark = document.createElement("div");
   mark.className = "focus";
@@ -1332,20 +1718,30 @@ $("finder").addEventListener("click", (event) => {
   mark.style.top = `${y - photoRect.top}px`;
   photo.appendChild(mark);
   setTimeout(() => mark.remove(), 900);
-  explain("对焦到点击的位置。对焦框会自己消失。");
+  const camLabel = state.dual ? (state.selectedCam === "front" ? "前置" : "后置") : "";
+  explain(state.dual ? `对焦${camLabel}。对焦框会自己消失。` : "对焦到点击的位置。对焦框会自己消失。");
 });
 
 $("finder").addEventListener("wheel", (event) => {
-  if (state.screen !== "camera" || state.facing === "front") return;
+  if (state.screen !== "camera") return;
+  if (state.dual ? state.selectedCam === "front" : state.facing === "front") return;
   event.preventDefault();
-  const next = Math.min(5, Math.max(0.5, state.zoom + (event.deltaY > 0 ? -0.1 : 0.1)));
+  const floor = state.dual ? 1 : 0.5;
+  const next = Math.min(5, Math.max(floor, state.zoom + (event.deltaY > 0 ? -0.1 : 0.1)));
   state.zoom = Math.round(next * 10) / 10;
+  if (state.dual) state.zoomBack = state.zoom;
   renderZoom();
   renderLook();
   $("zoom-hud").classList.add("show");
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(() => $("zoom-hud").classList.remove("show"), 700);
 }, { passive: false });
+
+$("dual-extra").addEventListener("input", (event) => {
+  if (event.target.id !== "veil") return;
+  state.veil = Number(event.target.value) / 100;
+  layoutDual($("dual-stage"));
+});
 
 $("frame-model").addEventListener("change", () => {
   state.showsModel = $("frame-model").checked;

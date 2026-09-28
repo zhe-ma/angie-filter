@@ -48,7 +48,12 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `LookFamily` | 一个分类，成员是 `Look` |
 | `LookLibrary` | 读 `Looks.json`，再接上 `LUTLooks.json` |
 | `LookAdjustment` | 这一次打开里改过的强度、褪色、光晕和空间参数 |
-| `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量 |
+| `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量、双摄排列 |
+| `DualLayout` | 上下、左右、画中画、圆窗、叠加 |
+| `PipCorner` | 小窗没被拖开时贴住的角 |
+| `DualSettings` | 排列、主路、选中的一路、小窗位置、透明度、两路滤镜 |
+| `DualFrameGeometry` | 两路在外框里的位置。取景白环和合成共用 |
+| `DualFocusMap` | 把格子里的点击映射回相机对焦点，并补上裁切边距 |
 | `RenderQuality` | `preview` 或 `still` |
 | `FrameStyle` | 关闭、留白、暗房、相纸、窗线、角标、压底、拍立得、印记 |
 | `FrameSettings` | 样式、型号、地点、日期、一行短句 |
@@ -62,6 +67,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | 类型 | 作用 |
 | --- | --- |
 | `CameraSessionController` | 配置相机会话，收预览帧和照片，回传状态 |
+| `DualSessionController` | 前后广角同时采集。模拟器上不启动 |
 | `ZoomLadderBuilder` | 从当前后置设备读出变焦档 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色 |
 | `GradeApplicator` | 按 `LookGrade` 分发，再按强度溶回原图 |
@@ -72,6 +78,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `LUTImageStore` | LUT 图，最近 16 张 |
 | `GrainLibrary` | 细、粗两张颗粒板 |
 | `FrameCompositor` | 调色之后把照片贴进更大的白画布 |
+| `DualFrameComposer` | 把两路已经调色的图按排列贴进同一张外框 |
 | `FrameCaptionKey` | 字图缓存的键：文案和底栏像素尺寸 |
 | `FrameCaptionCache` | 最近两张字图，预览和成片各留一张 |
 | `FrameCaptionRenderer` | 主线程用 Core Graphics 画底栏 |
@@ -85,8 +92,8 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 
 | 类型 | 作用 |
 | --- | --- |
-| `CameraView` | 取景、顶栏、相框、滤镜、快门 |
-| `CameraViewModel` | 主线程状态。相框和滤镜调节都只留在这次启动的内存里 |
+| `CameraView` | 取景、顶栏、相框、滤镜、快门。支持双摄时顶栏有「双摄」 |
+| `CameraViewModel` | 主线程状态。相框、滤镜调节和双摄的两套滤镜都只留在这次启动的内存里 |
 | `PlaceReader` | 使用期间的位置，逆地理成城市和区。关掉地点就停止 |
 | `FilterStripView` | 滤镜分类和缩略图 |
 | `ReviewView` | 重拍或保存。图里已经带相框 |

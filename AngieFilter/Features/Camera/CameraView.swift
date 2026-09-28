@@ -22,6 +22,9 @@ struct CameraView: View {
         VStack(spacing: 0) {
             topBar
             preview
+            if model.dualOn {
+                dualBar
+            }
             if model.frameOpen {
                 framePanel
             }
@@ -39,8 +42,8 @@ struct CameraView: View {
                     .font(.system(size: 18, weight: .medium))
                     .frame(width: 40, height: 40)
             }
-            .disabled(model.status.facing == .front)
-            .opacity(model.status.facing == .front || model.status.flashMode == .off ? 0.45 : 1)
+            .disabled(!model.flashAvailable)
+            .opacity(model.flashAvailable && model.status.flashMode != .off ? 1 : 0.45)
             Spacer()
             Button(model.aspectRatio.rawValue, action: model.cycleAspect)
                 .font(.system(size: 13, weight: .semibold))
@@ -48,6 +51,15 @@ struct CameraView: View {
                 .frame(height: 32)
                 .overlay(Capsule().stroke(Color.white.opacity(0.85), lineWidth: 1.5))
             Spacer()
+            if model.dualAvailable {
+                Button("双摄", action: model.toggleDual)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(model.dualOn ? Color.black : Color.white)
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(model.dualOn ? Color.white : Color.clear, in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+            }
             Button(action: model.flipCamera) {
                 Image(systemName: "arrow.triangle.2.circlepath.camera")
                     .font(.system(size: 18, weight: .medium))
@@ -81,21 +93,14 @@ struct CameraView: View {
                         .frame(width: 72, height: 72)
                         .position(point)
                 }
+                dualRing(in: geometry.size)
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(previewDrag(in: geometry.size))
+                    .simultaneousGesture(pinch)
                 zoomRow
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 12 + geometry.size.height - model.photoRect(in: geometry.size).maxY)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(pinch)
-                    .onTapGesture { location in
-                        let photo = model.photoRect(in: geometry.size)
-                        if model.filtersOpen || model.frameOpen {
-                            model.dismissPanels()
-                        }
-                        guard photo.contains(location) else { return }
-                        let local = CGPoint(x: location.x - photo.minX, y: location.y - photo.minY)
-                        model.focus(viewPoint: local, in: photo.size, displayPoint: location)
-                    }
             }
         }
         .aspectRatio(model.previewWidthOverHeight, contentMode: .fit)
@@ -193,6 +198,9 @@ struct CameraView: View {
                 Text(model.selectedLook.name)
                     .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.86))
+                if model.dualOn {
+                    dualCameraSwitch
+                }
                 if let notice = model.adjustmentNotice {
                     Text(notice)
                         .font(.system(size: 12))
@@ -331,6 +339,11 @@ struct CameraView: View {
                         .background(frameButtonOn ? Color.white : Color.white.opacity(0.18), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                if model.dualOn {
+                    Text(model.dualSelected == .back ? "后置" : "前置")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.86))
+                }
                 if showAppliedName {
                     Text(model.selectedLook.name)
                         .font(.system(size: 13))
@@ -397,6 +410,125 @@ struct CameraView: View {
         MagnificationGesture()
             .onChanged { model.pinchChanged($0) }
             .onEnded { _ in model.pinchEnded() }
+    }
+
+    private func previewDrag(in size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                model.previewDragChanged(start: value.startLocation, current: value.location, in: size)
+            }
+            .onEnded { value in
+                model.previewDragEnded(start: value.startLocation, current: value.location, in: size)
+            }
+    }
+
+    private var dualBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(DualLayout.allCases) { layout in
+                        let selected = model.dualLayout == layout
+                        Button(layout.title) {
+                            model.setDualLayout(layout)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color.black : Color.white)
+                        .padding(.horizontal, 14)
+                        .frame(height: 32)
+                        .background(selected ? Color.white : Color.white.opacity(0.12), in: Capsule())
+                    }
+                }
+            }
+            dualExtra
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private var dualExtra: some View {
+        switch model.dualLayout {
+        case .stacked, .sideBySide:
+            dualTextButton("交换", action: model.swapLead)
+        case .pip, .circle:
+            HStack(spacing: 8) {
+                dualTextButton("换角", action: model.cyclePipCorner)
+                dualTextButton("交换", action: model.swapLead)
+            }
+        case .blend:
+            HStack(spacing: 8) {
+                Text("透明度")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                Slider(
+                    value: Binding(
+                        get: { Double(model.veil) },
+                        set: { model.setVeil(Float($0)) }
+                    ),
+                    in: 0.2...0.8
+                )
+                dualCameraSwitch
+                dualTextButton("换层", action: model.swapLead)
+            }
+        }
+    }
+
+    private var dualCameraSwitch: some View {
+        HStack(spacing: 6) {
+            cameraChip("后置", facing: .back)
+            cameraChip("前置", facing: .front)
+        }
+    }
+
+    private func cameraChip(_ title: String, facing: CameraFacing) -> some View {
+        let selected = model.dualSelected == facing
+        return Button(title) {
+            model.selectCamera(facing)
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+        .foregroundStyle(selected ? Color.black : Color.white)
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .background(selected ? Color.white : Color.white.opacity(0.12), in: Capsule())
+    }
+
+    private func dualTextButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Color.white.opacity(0.12), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func dualRing(in viewSize: CGSize) -> some View {
+        if model.dualOn {
+            let photo = model.photoRect(in: viewSize)
+            let geometry = DualFrameGeometry.make(canvas: photo.size, settings: model.dualGeometrySettings())
+            let pane = geometry.pane(facing: model.dualSelected)
+            let frame = model.dualLayout == .blend ? CGRect(origin: .zero, size: photo.size) : pane.frame
+            let rect = frame.offsetBy(dx: photo.minX, dy: photo.minY)
+            let circle = model.dualLayout != .blend && pane.isCircle
+            Group {
+                if circle {
+                    Circle()
+                        .stroke(Color.white, lineWidth: 2)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                } else {
+                    RoundedRectangle(cornerRadius: pane.cornerRadius, style: .continuous)
+                        .stroke(Color.white, lineWidth: 2)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
 
     private var flashSymbol: String {

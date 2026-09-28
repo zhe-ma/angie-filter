@@ -66,7 +66,7 @@ flowchart LR
 | Domain | `AngieFilter/Domain/Looks/` | `Look`、`LookGrade`、`LookFamily`、`LookLibrary` |
 | Domain | `AngieFilter/Domain/Capture/` | 画幅、变焦档、闪光灯、朝向、权限。界面不读 `AVCaptureDevice` |
 | Domain | `AngieFilter/Domain/Rendering/` | `RenderParameters`、`LookAdjustment`、`RenderQuality` |
-| CameraPipeline | `AngieFilter/CameraPipeline/Capture/` | `CameraSessionController`、`ZoomLadderBuilder` |
+| CameraPipeline | `AngieFilter/CameraPipeline/Capture/` | `CameraSessionController`、`DualSessionController`、`ZoomLadderBuilder` |
 | CameraPipeline | `AngieFilter/CameraPipeline/Rendering/` | 几何、分发、两套 grader、资源缓存、预览 |
 | CameraPipeline | `AngieFilter/CameraPipeline/Photos/` | `PhotoLibraryStore` |
 | Features | `AngieFilter/Features/Camera/` | `CameraView`、`CameraViewModel`、`FilterStripView` |
@@ -153,23 +153,28 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 先读 `Looks.json`，再接上 `LUTLooks.json`。配方文件缺失时只返回原图 |
 | `AspectRatio`、`AspectCrop` | `AngieFilter/Domain/Capture/` | 画幅和转正之后的中心裁切 |
 | `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值 |
-| `RenderParameters`、`LookAdjustment`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照 |
+| `RenderParameters`、`LookAdjustment`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照。`dual` 有值时是双摄 |
+| `DualLayout`、`PipCorner`、`DualSettings` | `AngieFilter/Domain/Rendering/DualSettings.swift` | 五种排列、小窗的角、两路滤镜 |
+| `DualFrameGeometry` | `AngieFilter/Domain/Rendering/DualFrameGeometry.swift` | 两路在外框里的矩形或圆 |
+| `DualFocusMap` | `AngieFilter/Domain/Rendering/DualFocusMap.swift` | 格子内点击映射到对焦点 |
 | `FrameStyle`、`FrameSettings`、`FrameLayout`、`FrameDateText` | `AngieFilter/Domain/Rendering/FrameSettings.swift` | 相框样式、外框尺寸、日期字符串 |
 | `PhoneModelName` | `AngieFilter/Domain/Rendering/PhoneModelName.swift` | 机型标识到营销名 |
 | `PlaceCaption` | `AngieFilter/Domain/Rendering/PlaceCaption.swift` | 城市和区拼成底栏地点 |
 
-`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`frame`、`frameModelName`、`frameDate`、`framePlace`、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。
+`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`frame`、`frameModelName`、`frameDate`、`framePlace`、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）、`dual`（双摄时的排列和两路滤镜，单摄为 nil）。
 
 ## CameraPipeline 类型
 
 | 类型 | 文件 |
 | --- | --- |
 | `CameraSessionController` | `AngieFilter/CameraPipeline/Capture/CameraSessionController.swift` |
+| `DualSessionController` | `AngieFilter/CameraPipeline/Capture/DualSessionController.swift` |
 | `ZoomLadderBuilder` | `AngieFilter/CameraPipeline/Capture/ZoomLadderBuilder.swift` |
 | `FrameImageMaker` | `AngieFilter/CameraPipeline/Rendering/FrameImageMaker.swift` |
 | `GradeApplicator` | `AngieFilter/CameraPipeline/Rendering/GradeApplicator.swift` |
 | `FilmFinish` | `AngieFilter/CameraPipeline/Rendering/FilmFinish.swift` |
 | `FrameCompositor` | `AngieFilter/CameraPipeline/Rendering/FrameCompositor.swift` |
+| `DualFrameComposer` | `AngieFilter/CameraPipeline/Rendering/DualFrameComposer.swift` |
 | `FrameCaptionKey`、`FrameCaptionCache`、`FrameCaptionRenderer` | `AngieFilter/CameraPipeline/Rendering/FrameCaption.swift` |
 | `ColorCubeGrader` | `AngieFilter/CameraPipeline/Rendering/ColorCubeGrader.swift` |
 | `LUTImageGrader` | `AngieFilter/CameraPipeline/Rendering/LUTImageGrader.swift` |
