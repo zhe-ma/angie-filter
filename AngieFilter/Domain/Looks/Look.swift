@@ -13,6 +13,7 @@ struct Look: Identifiable, Equatable, Sendable {
     let name: String
     let about: String
     let grade: LookGrade
+    var finish = LookFinish()
 
     static let originalID = "original"
 
@@ -23,6 +24,9 @@ struct Look: Identifiable, Equatable, Sendable {
     var grainPlate: GrainPlateKind { grade.colorCube?.grainPlate ?? .none }
     var vignette: Float { grade.colorCube?.vignette ?? 0 }
 
-    /// Recipe looks expose clarity, grain, and vignette. LUT looks expose intensity only.
+    /// Recipe looks expose clarity, grain, and vignette.
     var adjustsSpatially: Bool { grade.colorCube != nil }
+
+    /// Halation stays hidden unless this look ships with it.
+    var showsHalation: Bool { finish.halation > 0.001 }
 }

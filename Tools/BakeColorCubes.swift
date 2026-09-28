@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 // Authoring source for every look. Re-run from the repo root:
 //   swift Tools/BakeColorCubes.swift
 // Color (temperature, tint, contrast, saturation, brightness, hue) is baked
-// into a 65³ Display P3 cube. Clarity, grain, and vignette stay spatial and
-// are written to Looks.json for the app.
+// into a 65³ Display P3 cube. Clarity, grain, vignette, fade, shoulder,
+// halation, and skin stay spatial and are written to Looks.json for the app.
 
 let dimension = 65
 let coarseGrainIDs: Set<String> = [
@@ -47,7 +47,68 @@ struct CatalogItem: Codable {
     let grain: Float
     let grainPlate: String
     let vignette: Float
+    let fade: Float
+    let shoulder: Float
+    let halation: Float
+    let skin: Float
 }
+
+struct FinishSpec {
+    var fade: Float = 0
+    var shoulder: Float = 0
+    var halation: Float = 0
+    var skin: Float = 0
+}
+
+let finishByID: [String: FinishSpec] = [
+    "natural": FinishSpec(fade: 0.04, shoulder: 0.08),
+    "classic": FinishSpec(fade: 0.10, shoulder: 0.16, skin: 0.25),
+    "bright": FinishSpec(fade: 0.02, shoulder: 0.06),
+    "mono": FinishSpec(fade: 0.06, shoulder: 0.10),
+    "standard": FinishSpec(fade: 0.04, shoulder: 0.08),
+    "vivid": FinishSpec(fade: 0.02, shoulder: 0.06),
+    "soft": FinishSpec(fade: 0.10, shoulder: 0.10, skin: 0.25),
+    "chrome": FinishSpec(fade: 0.06, shoulder: 0.18),
+    "neg": FinishSpec(fade: 0.16, shoulder: 0.14, skin: 0.25),
+    "nostalgia": FinishSpec(fade: 0.18, shoulder: 0.12, skin: 0.20),
+    "real": FinishSpec(fade: 0.08, shoulder: 0.10),
+    "cinema": FinishSpec(fade: 0.10, shoulder: 0.16),
+    "bleach": FinishSpec(fade: 0.08, shoulder: 0.20),
+    "portrait": FinishSpec(fade: 0.12, shoulder: 0.12, skin: 0.30),
+    "portrait-hi": FinishSpec(fade: 0.14, shoulder: 0.12, skin: 0.30),
+    "acros": FinishSpec(fade: 0.05, shoulder: 0.12),
+    "pro400h": FinishSpec(fade: 0.16, shoulder: 0.12, skin: 0.30),
+    "superia": FinishSpec(fade: 0.14, shoulder: 0.12, skin: 0.20),
+    "portra160": FinishSpec(fade: 0.12, shoulder: 0.10, skin: 0.35),
+    "portra400": FinishSpec(fade: 0.14, shoulder: 0.12, skin: 0.35),
+    "portra800": FinishSpec(fade: 0.16, shoulder: 0.12, skin: 0.35),
+    "gold": FinishSpec(fade: 0.16, shoulder: 0.10, skin: 0.30),
+    "ektar": FinishSpec(fade: 0.04, shoulder: 0.14),
+    "ultramax": FinishSpec(fade: 0.14, shoulder: 0.10, skin: 0.20),
+    "colorplus": FinishSpec(fade: 0.16, shoulder: 0.10, skin: 0.15),
+    "kodachrome": FinishSpec(fade: 0.06, shoulder: 0.18),
+    "ektachrome": FinishSpec(fade: 0.04, shoulder: 0.12),
+    "trix": FinishSpec(fade: 0.06, shoulder: 0.14),
+    "tmax": FinishSpec(fade: 0.03, shoulder: 0.10),
+    "cs800t": FinishSpec(fade: 0.08, shoulder: 0.16, halation: 0.35),
+    "cs50d": FinishSpec(fade: 0.06, shoulder: 0.12),
+    "cs400d": FinishSpec(fade: 0.08, shoulder: 0.12),
+    "v250d": FinishSpec(fade: 0.06, shoulder: 0.14, skin: 0.20),
+    "v500t": FinishSpec(fade: 0.10, shoulder: 0.16, halation: 0.35),
+    "positive": FinishSpec(fade: 0.04, shoulder: 0.08),
+    "negative": FinishSpec(fade: 0.16, shoulder: 0.12, skin: 0.20),
+    "hibw": FinishSpec(fade: 0.08, shoulder: 0.12),
+    "hncs": FinishSpec(fade: 0.03, shoulder: 0.06),
+    "hp5": FinishSpec(fade: 0.08, shoulder: 0.14),
+    "delta": FinishSpec(fade: 0.04, shoulder: 0.10),
+    "fp4": FinishSpec(fade: 0.06, shoulder: 0.12),
+    "xp2": FinishSpec(fade: 0.05, shoulder: 0.08),
+    "sx70": FinishSpec(fade: 0.20, shoulder: 0.10),
+    "p600": FinishSpec(fade: 0.18, shoulder: 0.10),
+    "canon": FinishSpec(fade: 0.02, shoulder: 0.04),
+    "nikon": FinishSpec(fade: 0.02, shoulder: 0.04),
+    "sony": FinishSpec(fade: 0.02, shoulder: 0.04)
+]
 
 func spec(
     _ id: String,
@@ -446,14 +507,19 @@ do {
     try writePNG(coarse, size: 512, to: grainDirectory.appendingPathComponent("coarse.png"))
 
     let items = looks.map {
-        CatalogItem(
+        let finish = finishByID[$0.id] ?? FinishSpec()
+        return CatalogItem(
             id: $0.id,
             name: $0.name,
             about: $0.about,
             clarity: $0.clarity,
             grain: $0.grain,
             grainPlate: $0.grainPlate,
-            vignette: $0.vignette
+            vignette: $0.vignette,
+            fade: finish.fade,
+            shoulder: finish.shoulder,
+            halation: finish.halation,
+            skin: finish.skin
         )
     }
     let encoder = JSONEncoder()

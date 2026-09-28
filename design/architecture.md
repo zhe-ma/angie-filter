@@ -86,9 +86,13 @@ flowchart TB
   apply --> none["grade.none<br/>原图"]
   apply --> cube["ColorCubeGrader<br/>配方立方体"]
   apply --> lut["LUTImageGrader<br/>512 LUT 图"]
-  none --> mix["按强度溶回原图"]
-  cube --> mix
-  lut --> mix
+  cube --> finish["FilmFinish<br/>肤色、影调、光晕"]
+  lut --> finish
+  finish --> spatial{"配方?"}
+  spatial -->|是| rest["清晰度、颗粒、暗角"]
+  spatial -->|LUT| mix["按强度溶回原图"]
+  none --> mix
+  rest --> mix
   mix --> out["预览 MTKView / 确认页 UIImage / 缩略图"]
 ```
 
@@ -115,10 +119,10 @@ flowchart TB
 | 方案 | 资源 | 运行时还能调什么 |
 | --- | --- | --- |
 | `none` | 无 | 无 |
-| `colorCube` | `ColorCubes/<id>.acube`，目录在 `Looks.json` | 强度、清晰度、颗粒、暗角 |
-| `lutImage` | `LUTs/<name>.png`，目录在 `LUTLooks.json` | 只有强度。默认值是目录里的 `strength` |
+| `colorCube` | `ColorCubes/<id>.acube`，目录在 `Looks.json` | 强度、褪色、清晰度、颗粒、暗角。光晕仅当目录 `halation > 0` |
+| `lutImage` | `LUTs/<name>.png`，目录在 `LUTLooks.json` | 强度、褪色。光晕仅当目录 `halation > 0`。默认强度是 `strength` |
 
-强度混回原图在 `GradeApplicator`，两条路径共用。清晰度、颗粒、暗角只属于配方。界面用 `Look.adjustsSpatially` 决定调节面板画几根滑杆。
+强度混回原图在 `GradeApplicator`，两条路径共用。颜色之后先走 `FilmFinish`（肤色、影调、光晕），再由配方做清晰度、颗粒、暗角。界面用 `Look.adjustsSpatially` 决定后三根滑杆，用 `Look.showsHalation` 决定光晕。肩部和肤色留在目录里，不进面板。
 
 调节后的数值按滤镜 id 记在 `CameraViewModel` 的内存字典里，不写磁盘。点保存才写入。收起或不保存就回到上次保存的值；没有保存过则回到默认。缩略图始终用默认参数，方便和改过的画面对照。
 

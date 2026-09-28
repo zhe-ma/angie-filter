@@ -99,6 +99,42 @@
     max-width: 100%;
     max-height: 100%;
   }
+  .frame.bordered { background: #fff; }
+  .photo {
+    position: absolute;
+    left: var(--pad-x, 0);
+    top: var(--pad-top, 0);
+    right: var(--pad-x, 0);
+    bottom: var(--pad-bottom, 0);
+    overflow: hidden;
+  }
+  .caption-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--pad-bottom, 0);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 var(--pad-x, 0);
+    color: rgba(0,0,0,.82);
+    font-weight: 500;
+    line-height: 1;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .caption-bar[hidden] { display: none; }
+  .caption-bar.only-custom { grid-template-columns: 1fr; }
+  .cap-model { justify-self: start; }
+  .cap-custom {
+    justify-self: center;
+    max-width: 46%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .caption-bar.only-custom .cap-custom { max-width: 80%; }
+  .cap-date { justify-self: end; }
   .stack { position: absolute; inset: 0; }
   .art {
     position: absolute;
@@ -127,6 +163,20 @@
     mix-blend-mode: overlay;
     background-image: radial-gradient(rgba(255,255,255,.55) .6px, transparent .7px);
     background-size: 3px 3px;
+  }
+  .fade-wash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: rgba(92, 88, 82, var(--fade, 0));
+  }
+  .halation {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: var(--halo, 0);
+    mix-blend-mode: screen;
+    background: radial-gradient(circle at 24% 20%, rgba(255, 86, 36, .9), transparent 28%);
   }
   .vignette {
     position: absolute;
@@ -313,6 +363,54 @@
   }
   .filter-btn.open,
   .filter-btn.on { background: #fff; color: #111; }
+  .shutter-side {
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .frame-btn {
+    flex: 0 0 auto;
+    min-width: 64px;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 18px;
+    background: rgba(255,255,255,.18);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .frame-btn.open,
+  .frame-btn.on { background: #fff; color: #111; }
+  .frame-panel {
+    width: min(360px, 92%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .frame-panel[hidden] { display: none; }
+  .frame-choices { display: flex; gap: 8px; }
+  .frame-choices button {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 16px;
+    background: rgba(255,255,255,.12);
+    font-size: 13px;
+  }
+  .frame-choices button.active { background: #fff; color: #111; font-weight: 600; }
+  .frame-fields { display: flex; flex-direction: column; gap: 8px; }
+  .frame-fields[hidden] { display: none; }
+  .frame-switches { display: flex; gap: 16px; font-size: 13px; color: rgba(255,255,255,.84); }
+  .frame-switches label { display: flex; align-items: center; gap: 6px; }
+  .frame-fields input[type="text"] {
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(255,255,255,.12);
+    padding: 0 10px;
+    font-size: 13px;
+  }
   .shutter {
     width: 74px;
     height: 74px;
@@ -421,17 +519,40 @@
         </header>
         <div class="finder" id="finder">
           <div class="frame" id="frame">
-            <div class="stack" id="stack">
-              <div class="art"></div>
-              <div class="art graded" id="graded"></div>
-              <div class="grain" id="grain"></div>
-              <div class="vignette" id="vignette"></div>
+            <div class="photo" id="photo">
+              <div class="stack" id="stack">
+                <div class="art"></div>
+                <div class="art graded" id="graded"></div>
+                <div class="grain" id="grain"></div>
+                <div class="fade-wash" id="fade"></div>
+                <div class="halation" id="halation"></div>
+                <div class="vignette" id="vignette"></div>
+              </div>
+              <div class="zoom-hud" id="zoom-hud">1×</div>
+              <div class="zoom-row" id="zoom-row"></div>
             </div>
-            <div class="zoom-hud" id="zoom-hud">1×</div>
-            <div class="zoom-row" id="zoom-row"></div>
+            <div class="caption-bar" id="caption-bar" hidden>
+              <span class="cap-model"></span>
+              <span class="cap-custom"></span>
+              <span class="cap-date"></span>
+            </div>
           </div>
         </div>
         <footer class="dock">
+          <div class="frame-panel" id="frame-panel" hidden>
+            <div class="frame-choices" id="frame-choices">
+              <button data-action="frame-style" data-style="off">关闭</button>
+              <button data-action="frame-style" data-style="white">白边</button>
+              <button data-action="frame-style" data-style="captioned">白边带字</button>
+            </div>
+            <div class="frame-fields" id="frame-fields" hidden>
+              <div class="frame-switches">
+                <label><input id="frame-model" type="checkbox" checked>型号</label>
+                <label><input id="frame-date" type="checkbox" checked>日期</label>
+              </div>
+              <input id="frame-text" type="text" placeholder="一行短句" enterkeyhint="done">
+            </div>
+          </div>
           <div class="filter-panel" id="filter-panel" hidden>
             <div class="adjust-head">
               <div class="look-name" id="look-name">原图</div>
@@ -440,6 +561,8 @@
             </div>
             <div class="adjust" id="adjust" hidden>
               <label>强度 <input id="adj-intensity" data-adjust="intensity" type="range" min="0" max="100" value="100"><span id="adj-intensity-value">100</span></label>
+              <label>褪色 <input id="adj-fade" data-adjust="fade" type="range" min="0" max="100" value="0"><span id="adj-fade-value">0</span></label>
+              <label class="adjust-halo">光晕 <input id="adj-halation" data-adjust="halation" type="range" min="0" max="100" value="0"><span id="adj-halation-value">0</span></label>
               <label class="adjust-spatial">清晰度 <input id="adj-clarity" data-adjust="clarity" type="range" min="0" max="100" value="30"><span id="adj-clarity-value">30</span></label>
               <label class="adjust-spatial">颗粒 <input id="adj-grain" data-adjust="grain" type="range" min="0" max="100" value="0"><span id="adj-grain-value">0</span></label>
               <label class="adjust-spatial">暗角 <input id="adj-vignette" data-adjust="vignette" type="range" min="0" max="100" value="0"><span id="adj-vignette-value">0</span></label>
@@ -452,7 +575,10 @@
             <div class="strip-wrap"><div class="strip" id="strip"></div></div>
           </div>
           <div class="shutter-row">
-            <div class="applied" id="applied"></div>
+            <div class="shutter-side">
+              <button class="frame-btn" id="frame-toggle" data-action="frame" aria-pressed="false">相框</button>
+              <div class="applied" id="applied"></div>
+            </div>
             <button class="shutter" data-action="shutter" aria-label="快门"><i></i></button>
             <button class="filter-btn" id="filter-toggle" data-action="filters" aria-pressed="false">滤镜</button>
           </div>
@@ -477,12 +603,12 @@
         </div>
       </section>
     </div>
-    <div class="caption">滤镜默认收起。点右下角「滤镜」展开，再点一次或点画面收回。</div>
+    <div class="caption">左侧「相框」选白边，右侧「滤镜」选风格。一次只展开一个面板。</div>
   </div>
 
   <aside class="notes">
     <h1>AngieFilter 交互</h1>
-    <p class="lead">取景默认尽量大。滤镜收在右下角按钮里。展开后上面选分类，下面只显示这一类的预览。</p>
+    <p class="lead">取景默认尽量大。左侧「相框」管白边，右侧「滤镜」管风格，一次只展开一个。</p>
     <div class="card">
       <h2>路径</h2>
       <div class="flow">
@@ -514,7 +640,7 @@ function stock(id, name, grade, grain, vignette, about) {
   return { id, name, grade, grain, vignette, about };
 }
 function lut(id, name, strength) {
-  const look = stock(id, name, "saturate(1.12) contrast(1.04)", 0, 0, "LUT 图。调节只有强度。");
+  const look = stock(id, name, "saturate(1.12) contrast(1.04)", 0, 0, "LUT 图。可以调强度和褪色。");
   look.scheme = "lut";
   look.strength = strength;
   return look;
@@ -609,12 +735,17 @@ const catalog = [
 const state = {
   screen: "camera",
   filtersOpen: false,
+  frameOpen: false,
+  frameStyle: "off",
+  showsModel: true,
+  showsDate: true,
+  customText: "",
   familyId: "original",
   lookId: "original",
   adjustOpen: false,
   notice: "",
   memory: {},
-  draft: { intensity: 100, clarity: 30, grain: 0, vignette: 0 },
+  draft: { intensity: 100, fade: 0, halation: 0, clarity: 30, grain: 0, vignette: 0 },
   aspect: "4:3",
   flash: "off",
   facing: "back",
@@ -623,19 +754,21 @@ const state = {
 
 const hints = {
   camera: [
-    "点画面对焦",
+    "点画面对焦。点在白边上只收起面板",
+    "点左侧「相框」：关闭、白边、白边带字。和右侧「滤镜」一次只展开一个",
+    "白边带字可以分别开关型号、日期，并写一行最多 12 个字的短句",
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
     "上面点分类，只换下面这一排；原图单独在最前",
     "缩略图都是当前画面，点一下立即套用",
-    "点「调节」或再点一次已选滤镜，改强度、清晰度、颗粒、暗角，保存后留在这次打开里",
+    "点「调节」或再点一次已选滤镜，改强度和褪色。配方还有清晰度、颗粒、暗角。光晕只在 800T、灯光 500 和新锐「电影」上出现",
     "点 0.5、1、2 变焦，或在画面上滚动滚轮",
     "点中间的比例，在 4:3、16:9、1:1 之间切换",
     "闪光灯只在后置可用，按 关、开、自动 循环",
     "点快门进入确认，不再进入编辑"
   ],
   review: [
-    "这一张就是刚才取景里看到的画面",
-    "重拍回到取景，风格和变焦都还在",
+    "这一张就是刚才取景里看到的画面，白边和字已经在图里",
+    "重拍回到取景，风格、相框和变焦都还在",
     "保存写入相册，然后回到取景"
   ],
   denied: [
@@ -679,12 +812,43 @@ function showScreen(screen) {
   if (screen === "camera") layoutFrame();
 }
 
+const finish = {
+  natural: [4, 0], classic: [10, 0], bright: [2, 0], mono: [6, 0],
+  standard: [4, 0], vivid: [2, 0], soft: [10, 0], chrome: [6, 0], neg: [16, 0], nostalgia: [18, 0],
+  real: [8, 0], cinema: [10, 0], bleach: [8, 0], portrait: [12, 0], "portrait-hi": [14, 0],
+  acros: [5, 0], pro400h: [16, 0], superia: [14, 0],
+  portra160: [12, 0], portra400: [14, 0], portra800: [16, 0], gold: [16, 0], ektar: [4, 0],
+  ultramax: [14, 0], colorplus: [16, 0], kodachrome: [6, 0], ektachrome: [4, 0], trix: [6, 0], tmax: [3, 0],
+  cs800t: [8, 35], cs50d: [6, 0], cs400d: [8, 0], v250d: [6, 0], v500t: [10, 35],
+  positive: [4, 0], negative: [16, 0], hibw: [8, 0], hncs: [3, 0],
+  hp5: [8, 0], delta: [4, 0], fp4: [6, 0], xp2: [5, 0], sx70: [20, 0], p600: [18, 0],
+  canon: [2, 0], nikon: [2, 0], sony: [2, 0],
+  "lut-dianying": [8, 22]
+};
+function toneOf(look) {
+  if (finish[look.id]) return { fade: finish[look.id][0], halation: finish[look.id][1] };
+  if (look.scheme === "lut" && look.id.startsWith("lut-") && ["ziran","qingtou","wenrou","baixi","fennen","candyb","dannai","musi","zhuguang","huoli","qingchun"].some((name) => look.id.endsWith(name))) {
+    return { fade: 8, halation: 0 };
+  }
+  if (look.scheme === "lut") return { fade: 6, halation: 0 };
+  return { fade: 0, halation: 0 };
+}
 function baselineAdjust(look) {
+  const tone = toneOf(look);
   if (look.scheme === "lut") {
-    return { intensity: Math.round((look.strength || 0.8) * 100), clarity: 0, grain: 0, vignette: 0 };
+    return {
+      intensity: Math.round((look.strength || 0.8) * 100),
+      fade: tone.fade,
+      halation: tone.halation,
+      clarity: 0,
+      grain: 0,
+      vignette: 0
+    };
   }
   return {
     intensity: 100,
+    fade: tone.fade,
+    halation: tone.halation,
     clarity: 30,
     grain: Math.round((look.grain || 0) * 100),
     vignette: Math.round((look.vignette || 0) * 100)
@@ -701,6 +865,8 @@ function applyGrade(root, look) {
   root.style.setProperty("--grade", look.grade);
   root.style.setProperty("--mix", String(mix));
   root.style.setProperty("--grain", String((adjust.grain / 100) * mix));
+  root.style.setProperty("--fade", String((adjust.fade / 100) * mix * 0.55));
+  root.style.setProperty("--halo", String((adjust.halation / 100) * mix));
   root.style.setProperty("--vignette", String((adjust.vignette / 100) * mix));
   root.style.setProperty("--zoom", String(state.zoom));
   root.querySelectorAll(".art").forEach((art) => art.classList.toggle("mirror", state.facing === "front"));
@@ -716,9 +882,14 @@ function renderAdjust() {
   document.querySelectorAll(".adjust-spatial").forEach((node) => {
     node.hidden = look.scheme === "lut";
   });
+  document.querySelectorAll(".adjust-halo").forEach((node) => {
+    node.hidden = toneOf(look).halation <= 0;
+  });
   if (open) {
-    for (const key of ["intensity", "clarity", "grain", "vignette"]) {
-      $(`adj-${key}`).value = String(state.draft[key]);
+    for (const key of ["intensity", "fade", "halation", "clarity", "grain", "vignette"]) {
+      const input = $(`adj-${key}`);
+      if (!input) continue;
+      input.value = String(state.draft[key]);
       $(`adj-${key}-value`).textContent = String(state.draft[key]);
     }
   }
@@ -735,7 +906,9 @@ function renderLook() {
   $("filter-toggle").classList.toggle("open", state.filtersOpen);
   $("filter-toggle").classList.toggle("on", look.id !== "original" && !state.filtersOpen);
   $("filter-toggle").setAttribute("aria-pressed", String(state.filtersOpen));
-  $("applied").textContent = !state.filtersOpen && look.id !== "original" ? look.name : "";
+  const panelsOpen = state.filtersOpen || state.frameOpen;
+  $("applied").textContent = !panelsOpen && look.id !== "original" ? look.name : "";
+  renderFrame();
 }
 
 function renderFamilies() {
@@ -784,44 +957,121 @@ function renderChrome() {
   $("flash").setAttribute("aria-label", state.facing === "front" ? "前置没有闪光灯" : flashTitle[state.flash]);
 }
 
+function frameGeometry() {
+  const photo = { "4:3": 3 / 4, "16:9": 16 / 9, "1:1": 1 }[state.aspect];
+  if (state.frameStyle === "off") return { ratio: photo, padX: 0, padTop: 0, padBottom: 0 };
+  const short = Math.min(photo, 1);
+  const outerW = photo + 0.09 * short;
+  const outerH = 1 + 0.155 * short;
+  return {
+    ratio: outerW / outerH,
+    padX: (0.045 * short) / outerW,
+    padTop: (0.045 * short) / outerH,
+    padBottom: (0.11 * short) / outerH
+  };
+}
+function applyPads(frame) {
+  const geo = frameGeometry();
+  const on = state.frameStyle !== "off";
+  frame.classList.toggle("bordered", on);
+  frame.style.setProperty("--pad-x", on ? `${geo.padX * 100}%` : "0px");
+  frame.style.setProperty("--pad-top", on ? `${geo.padTop * 100}%` : "0px");
+  frame.style.setProperty("--pad-bottom", on ? `${geo.padBottom * 100}%` : "0px");
+  return geo;
+}
+function formatDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}.${month}.${day}`;
+}
+function clampGraphemes(text, max) {
+  const parts = typeof Intl !== "undefined" && Intl.Segmenter
+    ? [...new Intl.Segmenter("zh", { granularity: "grapheme" }).segment(text)].map((part) => part.segment)
+    : [...text];
+  return parts.slice(0, max).join("");
+}
+function fillCaption(bar, height) {
+  if (!bar) return;
+  const captioned = state.frameStyle === "captioned";
+  bar.hidden = !captioned;
+  if (!captioned) return;
+  const model = state.showsModel ? "iPhone 13" : "";
+  const custom = state.customText.trim();
+  const date = state.showsDate ? formatDate(new Date()) : "";
+  bar.querySelector(".cap-model").textContent = model;
+  bar.querySelector(".cap-custom").textContent = custom;
+  bar.querySelector(".cap-date").textContent = date;
+  bar.classList.toggle("only-custom", Boolean(custom) && !model && !date);
+  if (height) bar.style.fontSize = `${Math.max(8, height * 0.28)}px`;
+}
+function renderFrame() {
+  const open = state.frameOpen;
+  $("frame-panel").hidden = !open;
+  $("frame-toggle").classList.toggle("open", open);
+  $("frame-toggle").classList.toggle("on", state.frameStyle !== "off");
+  $("frame-toggle").setAttribute("aria-pressed", String(open));
+  $("frame-fields").hidden = state.frameStyle !== "captioned";
+  document.querySelectorAll("#frame-choices button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.style === state.frameStyle);
+  });
+  $("frame-model").checked = state.showsModel;
+  $("frame-date").checked = state.showsDate;
+  if (document.activeElement !== $("frame-text")) $("frame-text").value = state.customText;
+  const geo = applyPads($("frame"));
+  fillCaption($("caption-bar"), $("frame").clientHeight * geo.padBottom);
+}
+
 function layoutFrame() {
   const finder = $("finder");
   const frame = $("frame");
   if (!finder || !frame) return;
-  const ratio = { "4:3": 3 / 4, "16:9": 16 / 9, "1:1": 1 }[state.aspect];
+  const geo = frameGeometry();
   let width = finder.clientWidth;
-  let height = width / ratio;
+  let height = width / geo.ratio;
   if (height > finder.clientHeight) {
     height = finder.clientHeight;
-    width = height * ratio;
+    width = height * geo.ratio;
   }
   frame.style.width = `${width}px`;
   frame.style.height = `${height}px`;
+  applyPads(frame);
+  fillCaption($("caption-bar"), height * geo.padBottom);
 }
 
 function paintReview() {
   const look = currentLook();
   $("review-photo").innerHTML = `
     <div class="frame" id="review-frame">
-      <div class="stack" id="review-stack">
-        <div class="art"></div>
-        <div class="art graded"></div>
-        <div class="grain"></div>
-        <div class="vignette"></div>
+      <div class="photo">
+        <div class="stack" id="review-stack">
+          <div class="art"></div>
+          <div class="art graded"></div>
+          <div class="grain"></div>
+          <div class="fade-wash"></div>
+          <div class="halation"></div>
+          <div class="vignette"></div>
+        </div>
+      </div>
+      <div class="caption-bar">
+        <span class="cap-model"></span>
+        <span class="cap-custom"></span>
+        <span class="cap-date"></span>
       </div>
     </div>`;
   const host = $("review-photo");
   const frame = $("review-frame");
-  const ratio = { "4:3": 3 / 4, "16:9": 16 / 9, "1:1": 1 }[state.aspect];
+  const geo = frameGeometry();
   let width = host.clientWidth || 370;
-  let height = width / ratio;
+  let height = width / geo.ratio;
   const limit = host.clientHeight || 700;
   if (height > limit) {
     height = limit;
-    width = height * ratio;
+    width = height * geo.ratio;
   }
   frame.style.width = `${width}px`;
   frame.style.height = `${height}px`;
+  applyPads(frame);
+  fillCaption(frame.querySelector(".caption-bar"), height * geo.padBottom);
   applyGrade($("review-stack"), look);
 }
 
@@ -871,15 +1121,35 @@ $("phone").addEventListener("click", (event) => {
   if (action === "filters") {
     const opening = !state.filtersOpen;
     state.filtersOpen = !state.filtersOpen;
+    if (state.filtersOpen) state.frameOpen = false;
     if (!state.filtersOpen) state.adjustOpen = false;
     if (opening) state.familyId = familyOfLook(state.lookId).id;
     renderStrip();
+    renderFrame();
     requestAnimationFrame(layoutFrame);
     if (state.filtersOpen) {
-      explain("滤镜面板打开。上面选分类，下面是这一类的预览。");
+      explain("滤镜面板打开。上面选分类，下面是这一类的预览。相框面板已收起。");
     } else {
       explain("滤镜面板收起，取景区域恢复。");
     }
+  } else if (action === "frame") {
+    state.frameOpen = !state.frameOpen;
+    if (state.frameOpen) {
+      state.filtersOpen = false;
+      state.adjustOpen = false;
+    }
+    renderLook();
+    renderFrame();
+    requestAnimationFrame(layoutFrame);
+    explain(state.frameOpen
+      ? "相框面板打开。可选关闭、白边、白边带字。滤镜面板已收起。"
+      : "相框面板收起。当前样式留在这次打开里。");
+  } else if (action === "frame-style") {
+    state.frameStyle = target.dataset.style;
+    renderFrame();
+    layoutFrame();
+    const label = { off: "关闭。画面回到裁切比例。", white: "白边。四周留白，底部更宽，没有字。", captioned: "白边带字。型号和日期默认开着，可以再写一行短句。" };
+    explain(label[state.frameStyle]);
   } else if (action === "family") {
     state.familyId = target.dataset.id;
     state.adjustOpen = false;
@@ -917,7 +1187,7 @@ $("phone").addEventListener("click", (event) => {
     explain("快门拍下的就是取景里这一帧。确认页不再改风格。");
   } else if (action === "retake") {
     showScreen("camera");
-    explain("重拍。刚才的风格、画幅和变焦都还在。");
+    explain("重拍。刚才的风格、相框、画幅和变焦都还在。");
   } else if (action === "save") {
     const button = $("save");
     button.disabled = true;
@@ -952,7 +1222,7 @@ $("phone").addEventListener("click", (event) => {
   } else if (action === "save-adjust") {
     const look = currentLook();
     const base = baselineAdjust(look);
-    const same = ["intensity", "clarity", "grain", "vignette"].every((key) => state.draft[key] === base[key]);
+    const same = ["intensity", "fade", "halation", "clarity", "grain", "vignette"].every((key) => state.draft[key] === base[key]);
     if (same) delete state.memory[look.id];
     else state.memory[look.id] = { ...state.draft };
     state.notice = "已保存";
@@ -964,22 +1234,31 @@ $("phone").addEventListener("click", (event) => {
 $("finder").addEventListener("click", (event) => {
   if (event.target.closest("[data-action]")) return;
   const frame = $("frame");
-  const rect = frame.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
-  if (state.filtersOpen) {
+  const photo = $("photo");
+  const frameRect = frame.getBoundingClientRect();
+  const photoRect = photo.getBoundingClientRect();
+  const x = event.clientX;
+  const y = event.clientY;
+  const inFrame = x >= frameRect.left && y >= frameRect.top && x <= frameRect.right && y <= frameRect.bottom;
+  if (!inFrame) return;
+  if (state.filtersOpen || state.frameOpen) {
     state.filtersOpen = false;
+    state.frameOpen = false;
     state.adjustOpen = false;
     renderLook();
     requestAnimationFrame(layoutFrame);
   }
-  frame.querySelectorAll(".focus").forEach((node) => node.remove());
+  const inPhoto = x >= photoRect.left && y >= photoRect.top && x <= photoRect.right && y <= photoRect.bottom;
+  if (!inPhoto) {
+    explain("点在白边上，只收起面板，不对焦。");
+    return;
+  }
+  photo.querySelectorAll(".focus").forEach((node) => node.remove());
   const mark = document.createElement("div");
   mark.className = "focus";
-  mark.style.left = `${x}px`;
-  mark.style.top = `${y}px`;
-  frame.appendChild(mark);
+  mark.style.left = `${x - photoRect.left}px`;
+  mark.style.top = `${y - photoRect.top}px`;
+  photo.appendChild(mark);
   setTimeout(() => mark.remove(), 900);
   explain("对焦到点击的位置。对焦框会自己消失。");
 });
@@ -995,6 +1274,29 @@ $("finder").addEventListener("wheel", (event) => {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(() => $("zoom-hud").classList.remove("show"), 700);
 }, { passive: false });
+
+$("frame-model").addEventListener("change", () => {
+  state.showsModel = $("frame-model").checked;
+  renderFrame();
+  explain(state.showsModel ? "底栏左侧显示 iPhone 13。" : "型号已关掉。再打开「白边带字」时还会记得这个开关。");
+});
+$("frame-date").addEventListener("change", () => {
+  state.showsDate = $("frame-date").checked;
+  renderFrame();
+  explain(state.showsDate ? "底栏右侧显示今天的日期。" : "日期已关掉。");
+});
+$("frame-text").addEventListener("input", () => {
+  const next = clampGraphemes($("frame-text").value, 12);
+  if (next !== $("frame-text").value) $("frame-text").value = next;
+  state.customText = next;
+  renderFrame();
+});
+$("frame-text").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  event.target.blur();
+  explain(state.customText.trim() ? "短句写在底栏中间。回车收起键盘。" : "空白不会印出来。");
+});
 
 $("adjust").addEventListener("input", (event) => {
   const key = event.target.dataset.adjust;

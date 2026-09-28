@@ -107,13 +107,23 @@ private struct LookRecord: Decodable {
     let grain: Float?
     let grainPlate: GrainPlateKind?
     let vignette: Float?
+    let fade: Float?
+    let shoulder: Float?
+    let halation: Float?
+    let skin: Float?
     let grade: String?
     let lutImage: String?
     let strength: Float?
 
     var look: Look {
+        let finish = LookFinish(
+            fade: fade ?? 0,
+            shoulder: shoulder ?? 0,
+            halation: halation ?? 0,
+            skin: skin ?? 0
+        )
         if id == Look.originalID {
-            return Look(id: id, name: name, about: about, grade: .none)
+            return Look(id: id, name: name, about: about, grade: .none, finish: finish)
         }
         if grade == "lutImage" {
             return Look(
@@ -123,7 +133,8 @@ private struct LookRecord: Decodable {
                 grade: .lutImage(LUTImageGrade(
                     imageName: lutImage ?? id,
                     strength: strength ?? 1
-                ))
+                )),
+                finish: finish
             )
         }
         return Look(
@@ -136,7 +147,8 @@ private struct LookRecord: Decodable {
                 grain: grain ?? 0,
                 grainPlate: grainPlate ?? .none,
                 vignette: vignette ?? 0
-            ))
+            )),
+            finish: finish
         )
     }
 }

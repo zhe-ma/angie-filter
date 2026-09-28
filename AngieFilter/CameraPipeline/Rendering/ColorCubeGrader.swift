@@ -1,22 +1,9 @@
 import CoreImage
 import Foundation
 
-/// Recipe looks: 65³ cube, then clarity, grain, and vignette. Intensity is applied by `GradeApplicator`.
+/// Recipe looks: a 65³ cube, then clarity, grain, and vignette. Finish and intensity stay in `GradeApplicator`.
 enum ColorCubeGrader {
-    static func apply(
-        _ image: CIImage,
-        grade: ColorCubeGrade,
-        adjustment: LookAdjustment,
-        quality: RenderQuality
-    ) -> CIImage {
-        var graded = applyCube(image, name: grade.cubeName)
-        graded = applyClarity(graded, amount: adjustment.clarity, quality: quality)
-        graded = applyGrain(graded, plate: grade.grainPlate, amount: adjustment.grain)
-        graded = applyVignette(graded, amount: adjustment.vignette, quality: quality)
-        return graded
-    }
-
-    private static func applyCube(_ image: CIImage, name: String) -> CIImage {
+    static func applyCube(_ image: CIImage, name: String) -> CIImage {
         guard let data = ColorCubeStore.shared.data(named: name),
               let filter = CIFilter(name: "CIColorCubeWithColorSpace") else {
             return image
@@ -27,6 +14,18 @@ enum ColorCubeGrader {
         filter.setValue(CGColorSpace(name: CGColorSpace.displayP3), forKey: "inputColorSpace")
         filter.setValue(true, forKey: "inputExtrapolate")
         return (filter.outputImage ?? image).cropped(to: image.extent)
+    }
+
+    static func applySpatial(
+        _ image: CIImage,
+        grade: ColorCubeGrade,
+        adjustment: LookAdjustment,
+        quality: RenderQuality
+    ) -> CIImage {
+        var graded = applyClarity(image, amount: adjustment.clarity, quality: quality)
+        graded = applyGrain(graded, plate: grade.grainPlate, amount: adjustment.grain)
+        graded = applyVignette(graded, amount: adjustment.vignette, quality: quality)
+        return graded
     }
 
     /// Local contrast on luminance only, so the micro-contrast does not fringe color.
@@ -62,7 +61,7 @@ enum ColorCubeGrader {
         let soft = tiled.applyingFilter("CISoftLightBlendMode", parameters: [
             kCIInputBackgroundImageKey: image
         ]).cropped(to: extent)
-        let mask = midtoneMask(image)
+        let mask = shadowMask(image)
         let masked = soft.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: image,
             kCIInputMaskImageKey: mask
@@ -70,18 +69,18 @@ enum ColorCubeGrader {
         return GradeApplicator.mix(image, masked, amount: amount)
     }
 
-    /// Grain stays in the midtones. Deep black and pure white stay clean.
-    private static func midtoneMask(_ image: CIImage) -> CIImage {
+    /// Grain peaks in the shadows. Pure white stays clean, and crushed black keeps only a little.
+    private static func shadowMask(_ image: CIImage) -> CIImage {
         let gray = image.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: 0,
             kCIInputContrastKey: 1,
             kCIInputBrightnessKey: 0
         ])
         return gray.applyingFilter("CIToneCurve", parameters: [
-            "inputPoint0": CIVector(x: 0, y: 0),
-            "inputPoint1": CIVector(x: 0.22, y: 0.2),
-            "inputPoint2": CIVector(x: 0.5, y: 1),
-            "inputPoint3": CIVector(x: 0.78, y: 0.2),
+            "inputPoint0": CIVector(x: 0, y: 0.15),
+            "inputPoint1": CIVector(x: 0.18, y: 1),
+            "inputPoint2": CIVector(x: 0.42, y: 0.72),
+            "inputPoint3": CIVector(x: 0.72, y: 0.18),
             "inputPoint4": CIVector(x: 1, y: 0)
         ]).cropped(to: image.extent)
     }

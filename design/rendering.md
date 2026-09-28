@@ -11,12 +11,13 @@ flowchart TB
   src["已经转正、镜像、裁切的图"] --> dispatch{"Look.grade"}
   dispatch -->|none| back["直接返回"]
   dispatch -->|colorCube| cube["65³ 立方体"]
-  cube --> clarity["清晰度"]
-  clarity --> grain["颗粒"]
-  grain --> vignette["暗角"]
-  vignette --> dissolve["CIDissolveTransition<br/>强度 0 到 1"]
   dispatch -->|lutImage| sample["采样 512 PNG"]
-  sample --> dissolve
+  cube --> finish["FilmFinish<br/>肤色、影调、光晕"]
+  sample --> finish
+  finish --> spatial{"配方?"}
+  spatial -->|是| rest["清晰度、颗粒、暗角"]
+  spatial -->|LUT| dissolve["CIDissolveTransition<br/>强度 0 到 1"]
+  rest --> dissolve
   src --> dissolve
 ```
 
@@ -27,12 +28,13 @@ flowchart TB
 | | 配方 `colorCube` | LUT 图 `lutImage` |
 | --- | --- | --- |
 | 颜色从哪来 | 烘焙进 65³ `.acube` | 运行时采样 PNG |
-| 清晰度、颗粒、暗角 | 在颜色之后，按画面尺寸做 | 不做。图里已经有的对比就留在图里 |
-| 调节 | 强度、清晰度、颗粒、暗角 | 只有强度 |
+| 清晰度、颗粒、暗角 | 在影调之后，按画面尺寸做 | 不做。图里已经有的对比就留在图里 |
+| 影调、光晕、肤色 | 颜色之后、清晰度之前，两条路径共用 | 同一段 `FilmFinish` |
+| 调节 | 强度、褪色、清晰度、颗粒、暗角。光晕只在目录里开了的款 | 强度、褪色。光晕只在目录里开了的款 |
 | 默认强度 | 1 | `LUTLooks.json` 的 `strength`，例如 0.8 |
 | 谁写出资源 | `Tools/BakeColorCubes.swift` | 把 PNG 放进 `Resources/LUTs/`，并写 `LUTLooks.json` |
 
-颗粒为 0 的配方如果把颗粒调高，用细颗粒板。LUT 没有这三根滑杆。
+颗粒为 0 的配方如果把颗粒调高，用细颗粒板。LUT 没有清晰度、颗粒、暗角。两条路径都有褪色。光晕只出现在目录里开了的款。
 
 缩略图使用 `quality = .preview` 和这款的默认调节，因此缩略图是目录里的样子，不是用户改过的草稿。
 
@@ -54,19 +56,38 @@ flowchart TB
 ```mermaid
 flowchart LR
   p3["Display P3"] --> cube["CIColorCubeWithColorSpace<br/>65³，extrapolate"]
-  cube --> clarity["清晰度<br/>亮度局部对比"]
-  clarity --> grain["颗粒板<br/>柔光，中间调遮罩"]
+  cube --> finish["FilmFinish"]
+  finish --> clarity["清晰度<br/>亮度局部对比"]
+  clarity --> grain["颗粒板<br/>柔光，暗部遮罩"]
   grain --> vignette["CIVignette"]
   vignette --> mix["按强度溶回原图"]
 ```
 
-1. `CIColorCubeWithColorSpace` 采样 65³，`inputExtrapolate = true`，`inputColorSpace` 是 Display P3。
-2. 清晰度：只在亮度上做局部对比，再以 `CIColorBlendMode` 回到彩色，避免彩边。预览半径 8，成片半径 18。这是立体感，不是锐化滑杆。
-3. 颗粒板：平铺，`CISoftLightBlendMode`，中间调遮罩压住死黑和纯白，再按颗粒量溶回这一步的输入。细板横向大约铺 3 次，粗板大约 1.7 次。不用 `CIRandomGenerator`。
-4. 暗角：`CIVignette`。预览半径 1.2，成片半径 1.6。多数风格这一项是 0。
-5. `GradeApplicator` 按强度用 `CIDissolveTransition` 溶回几何之后的原图。0 是原图，1 是完整风格。强度约等于 0 时整段直接返回。
+1. `CIColorCubeWithColorSpace` 采样 65³，`inputExtrapolate = true`，`inputColorSpace` 是 Display P3。LUT 在这一步换成采样 PNG。
+2. `FilmFinish`：肤色、影调、光晕。见下一节。配方和 LUT 都走。
+3. 清晰度：只在亮度上做局部对比，再以 `CIColorBlendMode` 回到彩色，避免彩边。预览半径 8，成片半径 18。这是立体感，不是锐化滑杆。只属于配方。
+4. 颗粒板：平铺，`CISoftLightBlendMode`，暗部遮罩压住高光，再按颗粒量溶回这一步的输入。细板横向大约铺 3 次，粗板大约 1.7 次。不用 `CIRandomGenerator`。只属于配方。
+5. 暗角：`CIVignette`。预览半径 1.2，成片半径 1.6。多数风格这一项是 0。只属于配方。
+6. `GradeApplicator` 按强度用 `CIDissolveTransition` 溶回几何之后的原图。0 是原图，1 是完整风格。强度约等于 0 时整段直接返回。
 
-中间调遮罩是亮度上的 `CIToneCurve`：`(0,0)`、`(0.22, 0.2)`、`(0.5, 1)`、`(0.78, 0.2)`、`(1, 0)`。`CIColorControls` 只用来抽出亮度。
+暗部遮罩是亮度上的 `CIToneCurve`：`(0, 0.15)`、`(0.18, 1)`、`(0.42, 0.72)`、`(0.72, 0.18)`、`(1, 0)`。颗粒落在阴影，纯白干净。`CIColorControls` 只用来抽出亮度。
+
+## 影调、光晕、肤色
+
+这三步在颜色之后、清晰度之前，写在 `FilmFinish`。肩部和肤色写死在目录里，不进调节面板。褪色和光晕进 `LookAdjustment`，跟强度一起按滤镜 id 记在当次打开的内存里。缩略图用目录默认值。
+
+| | 做什么 | 谁能调 | 默认开在哪 |
+| --- | --- | --- | --- |
+| 褪色 | `CIToneCurve` 抬黑位。滑杆 0 到 1，黑位最多抬到 0.12 | 每款非原图都有「褪色」 | 负片、宝丽来、人像 LUT 高一些。徕卡自然、哈苏、数码接近 0 |
+| 肩部 | 同一条曲线把高光轻轻压弯。滑杆拉高褪色时肩部不动 | 不露出 | 每款目录里的 `shoulder` |
+| 光晕 | 高光遮罩做一次模糊，染成偏红后 `CIScreenBlendMode`。同一次模糊再叠一层更淡的白雾，量是光晕的 0.28 | 只有目录里 `halation > 0` 才出现「光晕」 | `cs800t`、`v500t` 为 0.35，`lut-dianying` 为 0.22 |
+| 肤色 | 橙色相上把饱和拉回一点。红衣服的色相在窗外，不动。没有人脸检测 | 不露出 | 人像 LUT 为 0.45。Portra、金、富士人像、经典负片等偏暖人像胶片为 0.15 到 0.35 |
+
+光晕半径跟画面宽度走。预览是宽度的 0.012，成片是 0.022，并且不小于 2。关着的款不走模糊。
+
+肤色用 `CIColorKernel`。内核建不起来时这一步跳过，颜色和影调仍在。
+
+`Looks.json` 和 `LUTLooks.json` 都有 `fade`、`shoulder`、`halation`、`skin`。缺字段时按 0。烘焙脚本重跑时会把配方这四项写回 `Looks.json`，不写进立方体。
 
 65³ 是调色母版的常用精度。预览和成片用同一张立方体，不降到 33³。
 
@@ -138,6 +159,7 @@ flowchart TB
 | `grade` | 固定 `lutImage` |
 | `lutImage` | `LUTs/<lutImage>.png` 的文件名，不含扩展名 |
 | `strength` | 第一次套上时的强度，0 到 1 |
+| `fade` / `shoulder` / `halation` / `skin` | 和配方相同。人像 LUT 的 `skin` 是 0.45。新锐「电影」的 `halation` 是 0.22 |
 
 分类在 `LookLibrary.familySpecs`：人像、风景、美食、新锐。点分类只换缩略图，点缩略图才套用。
 
@@ -154,6 +176,10 @@ flowchart TB
 | `grain` | number | 0 表示没有颗粒 |
 | `grainPlate` | `none` / `fine` / `coarse` | 与 `GrainPlateKind` 一致 |
 | `vignette` | number | 0 表示没有暗角 |
+| `fade` | number | 褪色，0 到 1。调节面板的默认位置 |
+| `shoulder` | number | 高光肩部，不进调节面板 |
+| `halation` | number | 大于 0 才出现「光晕」滑杆 |
+| `skin` | number | 橙色相肤色修正，不进调节面板 |
 
 界面不按 JSON 数组平铺，而按 `LookLibrary.families` 显示。`Looks.json` 缺失、解码失败或数组为空时只返回内置原图。`LUTLooks.json` 缺失时，配方滤镜仍在。
 

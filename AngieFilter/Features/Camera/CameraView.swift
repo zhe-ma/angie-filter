@@ -155,6 +155,14 @@ struct CameraView: View {
             adjustmentRow("强度", value: model.draft.intensity, span: 1) { value in
                 model.updateDraft { $0.intensity = value }
             }
+            adjustmentRow("褪色", value: model.draft.fade, span: 1) { value in
+                model.updateDraft { $0.fade = value }
+            }
+            if model.selectedLook.showsHalation {
+                adjustmentRow("光晕", value: model.draft.halation, span: 1) { value in
+                    model.updateDraft { $0.halation = value }
+                }
+            }
             if model.selectedLook.adjustsSpatially {
                 adjustmentRow("清晰度", value: model.draft.clarity, span: 1) { value in
                     model.updateDraft { $0.clarity = value }

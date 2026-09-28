@@ -3,6 +3,8 @@ import ImageIO
 
 struct LookAdjustment: Equatable, Sendable {
     var intensity: Float = 1
+    var fade: Float = 0
+    var halation: Float = 0
     var clarity: Float = 0
     var grain: Float = 0
     var vignette: Float = 0
@@ -14,12 +16,18 @@ struct LookAdjustment: Equatable, Sendable {
         case .colorCube(let grade):
             return LookAdjustment(
                 intensity: 1,
+                fade: look.finish.fade,
+                halation: look.finish.halation,
                 clarity: grade.clarity,
                 grain: grade.grain,
                 vignette: grade.vignette
             )
         case .lutImage(let grade):
-            return LookAdjustment(intensity: grade.strength)
+            return LookAdjustment(
+                intensity: grade.strength,
+                fade: look.finish.fade,
+                halation: look.finish.halation
+            )
         }
     }
 }
