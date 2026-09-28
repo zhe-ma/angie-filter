@@ -21,7 +21,7 @@ struct LookAdjustment: Equatable, Sendable {
 }
 
 struct RenderParameters: Equatable, Sendable {
-    var aspectRatio: AspectRatio = .fourThree
+    var aspectRatio: AspectRatio = .threeFour
     var lookID: Look.ID = Look.originalID
     var adjustment = LookAdjustment()
     var frame = FrameSettings()

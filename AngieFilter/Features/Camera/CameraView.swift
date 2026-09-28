@@ -45,11 +45,22 @@ struct CameraView: View {
             .disabled(!model.flashAvailable)
             .opacity(model.flashAvailable && model.status.flashMode != .off ? 1 : 0.45)
             Spacer()
-            Button(model.aspectRatio.rawValue, action: model.cycleAspect)
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 10)
-                .frame(height: 32)
-                .overlay(Capsule().stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+            Menu {
+                Picker("画幅", selection: Binding(
+                    get: { model.aspectRatio },
+                    set: { model.setAspect($0) }
+                )) {
+                    ForEach(AspectRatio.allCases) { ratio in
+                        Text(ratio.rawValue).tag(ratio)
+                    }
+                }
+            } label: {
+                Text(model.aspectRatio.rawValue)
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .overlay(Capsule().stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+            }
             Spacer()
             if model.dualAvailable {
                 Button("双摄", action: model.toggleDual)
@@ -86,12 +97,14 @@ struct CameraView: View {
                         .shadow(radius: 4)
                         .padding(.top, 16 + model.photoRect(in: geometry.size).minY)
                         .frame(maxHeight: .infinity, alignment: .top)
+                        .allowsHitTesting(false)
                 }
                 if let point = model.focusPoint {
                     Rectangle()
                         .stroke(Color.yellow, lineWidth: 1.5)
                         .frame(width: 72, height: 72)
                         .position(point)
+                        .allowsHitTesting(false)
                 }
                 dualRing(in: geometry.size)
                 Color.clear
@@ -100,7 +113,7 @@ struct CameraView: View {
                     .simultaneousGesture(pinch)
                 zoomRow
                     .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 12 + geometry.size.height - model.photoRect(in: geometry.size).maxY)
+                    .padding(.bottom, 4 + geometry.size.height - model.photoRect(in: geometry.size).maxY)
             }
         }
         .aspectRatio(model.previewWidthOverHeight, contentMode: .fit)
@@ -108,19 +121,29 @@ struct CameraView: View {
         .padding(.vertical, 8)
     }
 
+    /// Each stop takes a 44pt target and the row swallows taps between them,
+    /// so a slightly missed stop does not fall through to tap-to-focus.
     private var zoomRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             ForEach(model.status.zoomStops) { stop in
                 let selected = abs(model.status.zoomFactor - stop.factor) < 0.08
-                Button(stop.title) {
+                Button {
                     model.zoom(to: stop)
+                } label: {
+                    Text(stop.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(selected ? Color.black : Color.white)
+                        .frame(minWidth: 36, minHeight: 28)
+                        .background(selected ? Color.white : Color.black.opacity(0.35), in: Capsule())
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(selected ? Color.black : Color.white)
-                .frame(minWidth: 36, minHeight: 28)
-                .background(selected ? Color.white : Color.black.opacity(0.35), in: Capsule())
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 6)
+        .contentShape(Capsule())
+        .onTapGesture {}
     }
 
     private var framePanel: some View {

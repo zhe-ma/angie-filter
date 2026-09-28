@@ -46,16 +46,14 @@ flowchart LR
   end
   subgraph resources [Resources]
     films[FilmLUTs]
-    luts[LUTs]
     grain[Grain]
-    json[Looks.json / LUTLooks.json]
+    json[Looks.json]
   end
   camera --> session
   camera --> looks
   session --> render
   render --> looks
   render --> films
-  render --> luts
   render --> grain
   looks --> json
   review --> photos
@@ -71,7 +69,7 @@ flowchart LR
 | CameraPipeline | `AngieFilter/CameraPipeline/Photos/` | `PhotoLibraryStore` |
 | Features | `AngieFilter/Features/Camera/` | `CameraView`、`CameraViewModel`、`FilterStripView` |
 | Features | `AngieFilter/Features/Review/` | `ReviewView` |
-| 资源 | `AngieFilter/Resources/` | 胶片 LUT 和许可、其余 LUT 图、颗粒板、两份目录 JSON |
+| 资源 | `AngieFilter/Resources/` | 胶片 LUT 和许可、颗粒板、目录 JSON |
 
 ## 一帧怎么走
 
@@ -120,7 +118,7 @@ flowchart TB
 | 方案 | 资源 | 目录 |
 | --- | --- | --- |
 | `none` | 无 | 原图 |
-| `lut` | `FilmLUTs/film-<id>.png` 或 `LUTs/<name>.png` | `Looks.json`（胶片款，由导入脚本写）和 `LUTLooks.json` |
+| `lut` | `FilmLUTs/film-<id>.png` | `Looks.json`（由导入脚本写） |
 | `builtIn` | 无 | `Looks.json` |
 
 `LookFinish` 是目录里的褪色、光晕、颗粒、颗粒板和暗角默认值。`LookAdjustment.baseline` 从它和 `Look.strength` 得出第一次套上时的调节。所有非原图款的面板都是强度、褪色、颗粒、暗角，`Look.showsHalation` 为真时多一根光晕。
@@ -145,7 +143,7 @@ Domain 仍然不出现 `CIImage`。像素工作留在 CameraPipeline。
 | `LookFinish` | `AngieFilter/Domain/Looks/LookFinish.swift` | 目录里的褪色、光晕、颗粒、暗角 |
 | `LookGrade`、`LUTGrade`、`BuiltInGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜的颜色从哪来 |
 | `LookFamily` | `AngieFilter/Domain/Looks/LookFamily.swift` | 分类。成员仍是 `Look` |
-| `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 先读 `Looks.json`，再接上 `LUTLooks.json`。`Looks.json` 缺失时只返回原图，不认识的条目跳过 |
+| `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 读 `Looks.json`。缺失时只返回原图，不认识的条目跳过 |
 | `AspectRatio`、`AspectCrop` | `AngieFilter/Domain/Capture/` | 画幅和转正之后的中心裁切 |
 | `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值 |
 | `RenderParameters`、`LookAdjustment`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照。`dual` 有值时是双摄 |

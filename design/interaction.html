@@ -748,100 +748,96 @@
   </aside>
 
 <script>
-function stock(id, name, grade, grain, vignette, about) {
-  return { id, name, grade, grain, vignette, about };
+function stock(id, name, grade, about, { strength = 1, grain = 0, vignette = 0, halation = 0 } = {}) {
+  return { id, name, grade, about, strength, grain, vignette, halation };
 }
-function lut(id, name, strength) {
-  const look = stock(id, name, "saturate(1.12) contrast(1.04)", 0, 0, "LUT 图。可以调强度和褪色。");
-  look.scheme = "lut";
-  look.strength = strength;
-  return look;
-}
-const plain = stock("original", "原图", "none", 0, 0, "不套风格。");
+const plain = stock("original", "原图", "none", "不套风格。");
 
 const catalog = [
   { id: "original", name: "原图", looks: [plain] },
-  { id: "leica", name: "徕卡", looks: [
-    stock("natural", "自然", "contrast(1.06) saturate(1.08) sepia(0.12) brightness(1.03)", 0.05, 0, "现代徕卡数码色彩。略暖，肤色稳，微对比明显。"),
-    stock("classic", "经典", "contrast(0.98) saturate(1.14) sepia(0.28) brightness(1.04)", 0.12, 0.25, "胶片时代的 M 型色彩。红色更厚，高光更早滚落。"),
-    stock("bright", "鲜明", "contrast(1.2) saturate(1.08) brightness(0.98)", 0, 0, "对比更高，黑色更实，色彩仍然自然。"),
-    stock("mono", "单色", "grayscale(1) contrast(1.22) brightness(1.03)", 0.22, 0.15, "黑白，阴影有层次，细颗粒。")
+  { id: "kodak", name: "柯达", looks: [
+    stock("portra160", "波特拉 160", "contrast(0.9) saturate(0.92) sepia(0.1) brightness(1.07)", "低感人像负片。反差低，肤色暖而干净。", { grain: 0.12 }),
+    stock("portra400", "波特拉 400", "contrast(0.98) saturate(1.0) sepia(0.16) brightness(1.04)", "最常用的人像负片。肤色柔和，高光宽容。", { grain: 0.18 }),
+    stock("portra400vc", "波特拉 VC", "contrast(1.06) saturate(1.18) sepia(0.12) brightness(1.03)", "Portra 400 的鲜艳版，饱和和反差都高一些。", { grain: 0.18 }),
+    stock("portra800", "波特拉 800", "contrast(0.94) saturate(0.88) sepia(0.22) brightness(1.05)", "高感人像负片。偏暖，颗粒更明显。", { grain: 0.26 }),
+    stock("ektar100", "艾克塔 100", "saturate(1.7) contrast(1.2) hue-rotate(-6deg) brightness(0.98)", "风景负片。色彩浓，颗粒极细。", { grain: 0.08 }),
+    stock("elite200", "精英 200", "saturate(1.12) contrast(1.06) sepia(0.18) brightness(1.02)", "柯达日常负片。偏暖，街拍和旅行。", { grain: 0.2 }),
+    stock("elite400", "精英 400", "saturate(1.16) contrast(1.1) sepia(0.24) brightness(1.02)", "更高感光的日常负片，暖调更明显。", { strength: 0.85, grain: 0.24 }),
+    stock("kodachrome64", "柯达克罗姆", "saturate(1.28) contrast(1.16) sepia(0.2) hue-rotate(-14deg)", "经典反转片。红黄浓郁，阴影深。", { strength: 0.85, grain: 0.1, vignette: 0.15 }),
+    stock("ektachrome100vs", "爱克塔克罗姆", "saturate(1.36) contrast(1.14) hue-rotate(10deg) brightness(1.02)", "高饱和反转片。蓝天和绿叶很鲜。", { strength: 0.85, grain: 0.08 }),
+    stock("elitechrome200", "精英反转", "saturate(1.18) contrast(1.1) brightness(1.03)", "柯达日常反转片，色彩明快。", { grain: 0.12 }),
+    stock("trix400", "Tri-X 400", "grayscale(1) contrast(1.28) brightness(1.01)", "经典黑白。反差硬，颗粒粗。", { grain: 0.34 }),
+    stock("tmax100", "T-Max 100", "grayscale(1) contrast(1.08) brightness(1.04)", "细颗粒黑白，影调平滑。", { grain: 0.1 }),
+    stock("bw400cn", "BW400CN", "grayscale(1) contrast(0.96) brightness(1.05)", "按彩色流程冲洗的黑白，影调偏柔。", { grain: 0.16 })
   ]},
   { id: "fuji", name: "富士", looks: [
-    stock("standard", "标准", "contrast(1.05) saturate(1.08)", 0.04, 0, "Provia。中性参照。"),
-    stock("vivid", "鲜艳", "saturate(1.7) contrast(1.12) hue-rotate(-8deg)", 0.04, 0, "Velvia。风景向，绿和红分开。"),
-    stock("soft", "柔和", "saturate(0.8) contrast(0.9) brightness(1.07) sepia(0.08)", 0.06, 0, "Astia。人像优先，对比低。"),
-    stock("chrome", "经典铬黄", "saturate(0.58) contrast(1.18) sepia(0.16) brightness(0.96)", 0.1, 0.12, "Classic Chrome。饱和低，暗部更硬。"),
-    stock("neg", "经典负片", "sepia(0.25) saturate(0.92) contrast(1.06) hue-rotate(-10deg)", 0.28, 0.35, "Classic Neg。暖阴影，冷高光。"),
-    stock("nostalgia", "怀旧负片", "sepia(0.4) saturate(1.2) contrast(0.94) brightness(1.06)", 0.24, 0.3, "Nostalgic Neg。琥珀色。"),
-    stock("real", "真实", "contrast(1.16) saturate(1.02) brightness(0.98)", 0.05, 0, "Reala Ace。色彩中性，影调更硬。"),
-    stock("cinema", "电影", "saturate(0.68) contrast(0.84) brightness(1.08)", 0.08, 0.2, "Eterna。低对比，高光留得住。"),
-    stock("bleach", "漂白", "saturate(0.4) contrast(1.32) brightness(1.02)", 0.16, 0.18, "Eterna Bleach Bypass。对比高，颜色抽掉。"),
-    stock("portrait", "人像", "saturate(0.75) contrast(0.98) sepia(0.14) brightness(1.05)", 0.08, 0, "Pro Neg. Std。肤色干净，饱和低。"),
-    stock("portrait-hi", "人像高", "saturate(0.78) contrast(1.1) sepia(0.12) brightness(1.02)", 0.08, 0, "Pro Neg. Hi。人像肤色，对比更高。"),
-    stock("acros", "黑白", "grayscale(1) contrast(1.1) brightness(1.05)", 0.4, 0.12, "Acros。阴影有细节，颗粒更像胶片。"),
-    stock("pro400h", "400H", "saturate(0.78) contrast(0.88) sepia(0.12) brightness(1.08)", 0.14, 0.16, "Pro 400H。粉彩，肤色软，已停产但预设里最常见。"),
-    stock("superia", "超级丽爱", "saturate(1.12) hue-rotate(12deg) contrast(1.06) sepia(0.08)", 0.22, 0.1, "Superia 400。消费负片，绿色更明显。")
+    stock("pro400h", "Pro 400H", "saturate(0.82) contrast(0.9) hue-rotate(10deg) brightness(1.08)", "婚礼人像负片。偏青绿，高光通透。", { grain: 0.18 }),
+    stock("pro160c", "Pro 160C", "saturate(0.94) contrast(0.96) hue-rotate(6deg) brightness(1.04)", "低感专业负片。干净，略偏冷。", { grain: 0.1 }),
+    stock("pro800z", "Pro 800Z", "saturate(0.96) contrast(1.0) sepia(0.08) brightness(1.03)", "高感人像负片。肤色自然，颗粒明显。", { grain: 0.26 }),
+    stock("superia200", "Superia 200", "saturate(1.08) hue-rotate(10deg) contrast(1.04)", "富士日常负片。绿色偏重。", { grain: 0.18 }),
+    stock("superia400", "Superia 400", "saturate(1.12) hue-rotate(12deg) contrast(1.06) sepia(0.08)", "日常负片。阴影偏青，绿叶浓。", { strength: 0.85, grain: 0.22 }),
+    stock("superia800", "Superia 800", "saturate(1.2) hue-rotate(10deg) contrast(1.1) sepia(0.1)", "高感日常负片。颗粒粗，色彩更重。", { strength: 0.85, grain: 0.28 }),
+    stock("reala100", "Reala 100", "contrast(1.04) saturate(1.0) brightness(1.01)", "还原准确的负片，色彩克制。", { grain: 0.1 }),
+    stock("velvia50", "Velvia 50", "saturate(1.7) contrast(1.12) hue-rotate(-8deg)", "风光反转片。饱和极高，反差大。", { strength: 0.85, grain: 0.06 }),
+    stock("provia100f", "Provia 100F", "contrast(1.05) saturate(1.08)", "标准反转片。中性，通透。", { grain: 0.06 }),
+    stock("astia100f", "Astia 100F", "saturate(0.8) contrast(0.9) brightness(1.07) sepia(0.08)", "柔和反转片，适合人像。", { grain: 0.06 }),
+    stock("acros100", "Acros 100", "grayscale(1) contrast(1.1) brightness(1.05)", "细腻黑白，中间调丰富。", { grain: 0.1 }),
+    stock("neopan1600", "Neopan 1600", "grayscale(1) contrast(1.32) brightness(0.98)", "高感黑白。反差硬，颗粒粗。", { grain: 0.4 })
   ]},
-  { id: "kodak", name: "柯达", looks: [
-    stock("portra160", "肖像 160", "contrast(0.9) saturate(0.92) sepia(0.1) brightness(1.07)", 0.08, 0.08, "Portra 160。颗粒最细，肤色最柔。"),
-    stock("portra400", "肖像 400", "contrast(0.98) saturate(1.0) sepia(0.16) brightness(1.04)", 0.18, 0.1, "Portra 400。人像胶片里最常用的一款。"),
-    stock("portra800", "肖像 800", "contrast(0.94) saturate(0.88) sepia(0.22) brightness(1.05)", 0.34, 0.16, "Portra 800。更暖，颗粒更明显。"),
-    stock("gold", "金 200", "sepia(0.34) saturate(1.18) hue-rotate(-8deg) contrast(1.06) brightness(1.03)", 0.2, 0.18, "Gold 200。日光消费卷，偏金黄。"),
-    stock("ektar", "爱克塔", "saturate(1.7) contrast(1.2) hue-rotate(-6deg) brightness(0.98)", 0.04, 0, "Ektar 100。风景高彩，细颗粒，不优先肤色。"),
-    stock("ultramax", "日常 400", "saturate(1.28) contrast(1.14) sepia(0.2) brightness(1.02)", 0.3, 0.14, "Ultramax 400。对比高，颗粒粗，偏暖。"),
-    stock("colorplus", "彩色+", "saturate(0.86) sepia(0.18) hue-rotate(10deg) contrast(1.02)", 0.22, 0.12, "ColorPlus。更闷，略偏绿。"),
-    stock("kodachrome", "柯达克罗姆", "saturate(1.28) contrast(1.16) sepia(0.2) hue-rotate(-14deg)", 0.06, 0.08, "Kodachrome 64。反转片，红色密，对比实。"),
-    stock("ektachrome", "爱克塔克罗姆", "saturate(1.16) contrast(1.12) hue-rotate(16deg) brightness(1.03)", 0.05, 0, "Ektachrome。反转片，蓝色更冷。"),
-    stock("trix", "黑白 400", "grayscale(1) contrast(1.28) brightness(1.01)", 0.48, 0.12, "Tri-X 400。粗颗粒新闻黑白。"),
-    stock("tmax", "黑白细", "grayscale(1) contrast(1.08) brightness(1.04)", 0.08, 0, "T-Max 100。颗粒细，影调平滑。")
+  { id: "instant", name: "拍立得", looks: [
+    stock("fp100c", "FP-100C", "saturate(0.9) contrast(0.9) hue-rotate(12deg) brightness(1.06)", "富士撕拉片。偏青，反差柔。", { grain: 0.16, vignette: 0.3 }),
+    stock("polaroid669", "宝丽来 669", "sepia(0.3) contrast(0.86) saturate(0.9) brightness(1.08)", "老式撕拉片。偏暖，带点褪色。", { grain: 0.18, vignette: 0.3 }),
+    stock("polaroid669cold", "669 冷调", "contrast(0.86) saturate(0.86) hue-rotate(18deg) brightness(1.06)", "669 的冷调冲法，阴影偏蓝。", { grain: 0.18, vignette: 0.3 }),
+    stock("polaroid690", "宝丽来 690", "sepia(0.22) contrast(0.94) saturate(1.12) brightness(1.06)", "撕拉片。色彩比 669 更饱和。", { strength: 0.85, grain: 0.18, vignette: 0.3 }),
+    stock("px70", "PX-70", "sepia(0.2) contrast(0.82) saturate(0.84) hue-rotate(-10deg) brightness(1.1)", "SX-70 相纸。淡，偏粉，暗部发闷。", { strength: 0.85, grain: 0.2, vignette: 0.4 }),
+    stock("px680", "PX-680", "sepia(0.34) contrast(0.86) saturate(1.0) brightness(1.08)", "600 相纸。暖黄，反差低。", { grain: 0.2, vignette: 0.35 }),
+    stock("px100warm", "PX-100 暖", "grayscale(1) sepia(0.4) contrast(0.92) brightness(1.06)", "黑白相纸的暖调版，带一点棕。", { grain: 0.2, vignette: 0.35 }),
+    stock("timezero", "过期相纸", "sepia(0.44) contrast(0.82) saturate(1.2) hue-rotate(-16deg) brightness(1.1)", "过期的 Time Zero。偏色明显，像放了很多年。", { strength: 0.6, grain: 0.22, vignette: 0.4 }),
+    stock("polachrome", "Polachrome", "saturate(0.86) contrast(0.92) hue-rotate(-14deg) brightness(0.98)", "宝丽来反转片。发闷，偏品红。", { grain: 0.18 }),
+    stock("polaroid665", "宝丽来 665", "grayscale(1) contrast(0.9) brightness(1.06)", "黑白撕拉片。灰阶长，暗部柔。", { grain: 0.18, vignette: 0.3 })
   ]},
-  { id: "cinema", name: "电影", looks: [
-    stock("cs800t", "800T", "saturate(0.82) contrast(1.08) hue-rotate(22deg) brightness(0.96) sepia(0.06)", 0.32, 0.22, "Cinestill 800T。钨丝灯光，偏青，高光周围有红晕。"),
-    stock("cs50d", "50D", "saturate(1.06) contrast(1.02) sepia(0.08) brightness(1.04)", 0.06, 0.06, "Cinestill 50D。日光电影卷，干净，略暖。"),
-    stock("cs400d", "400D", "saturate(1.02) contrast(1.04) sepia(0.12) brightness(1.03)", 0.16, 0.1, "Cinestill 400D。日光，颗粒介于 50D 和 800T 之间。"),
-    stock("v250d", "日光 250", "saturate(1.08) contrast(1.05) sepia(0.06) brightness(1.02)", 0.08, 0, "Vision3 250D。电影日光底片，肤色自然。"),
-    stock("v500t", "灯光 500", "saturate(0.92) contrast(1.06) hue-rotate(14deg) brightness(0.98)", 0.14, 0.12, "Vision3 500T。钨丝灯电影底片，比 800T 更干净。"),
-    stock("trailer", "大片", "contrast(1.14) saturate(1.08) sepia(0.16) hue-rotate(-8deg)", 0.16, 0.18, "电影宣传片。阴影偏青，肤色和灯光偏暖。")
+  { id: "mono", name: "黑白", looks: [
+    stock("hp5", "HP5 400", "grayscale(1) contrast(1.18) brightness(1.02)", "依尔福经典黑白。宽容度大，颗粒明显。", { grain: 0.3 }),
+    stock("delta100", "Delta 100", "grayscale(1) contrast(1.12) brightness(1.03)", "依尔福细颗粒黑白，锐利。", { grain: 0.1 }),
+    stock("delta3200", "Delta 3200", "grayscale(1) contrast(1.26) brightness(0.94)", "超高感黑白。暗部重，颗粒很粗。", { grain: 0.45 }),
+    stock("fp4", "FP4 125", "grayscale(1) contrast(1.08) brightness(1.02)", "依尔福中感黑白，灰阶细。", { grain: 0.14 }),
+    stock("panf50", "Pan F 50", "grayscale(1) contrast(1.3) brightness(1.02)", "低感黑白。反差高，几乎没有颗粒。", { grain: 0.05 }),
+    stock("xp2", "XP2", "grayscale(1) contrast(1.0) brightness(1.07)", "按彩色流程冲洗的黑白，柔和。", { grain: 0.14 }),
+    stock("apx100", "APX 100", "grayscale(1) contrast(1.14) brightness(1.01)", "爱克发黑白。中性，略硬。", { grain: 0.12 }),
+    stock("retro100", "Retro 100", "grayscale(1) sepia(0.1) contrast(1.1) brightness(1.04)", "禄来黑白。影调复古，高光柔。", { grain: 0.14 }),
+    stock("ortho25", "Ortho 25", "grayscale(1) contrast(1.2) brightness(1.06)", "正色片。红色变暗，天空变亮。", { grain: 0.06 }),
+    stock("infrared", "红外", "grayscale(1) invert(0.12) contrast(1.3) brightness(1.08)", "柯达红外黑白。绿叶发白，天空发黑。", { grain: 0.3 })
   ]},
-  { id: "ricoh", name: "理光", looks: [
-    stock("positive", "正片", "contrast(1.18) saturate(1.14) hue-rotate(8deg) brightness(0.99)", 0, 0, "GR 正片。街拍直出，略偏青，对比清楚。"),
-    stock("negative", "负片", "contrast(0.94) saturate(0.96) sepia(0.12) brightness(1.05)", 0.1, 0.08, "GR 负片。更软，略暖。"),
-    stock("hibw", "高对比黑白", "grayscale(1) contrast(1.4) brightness(0.98)", 0.16, 0.2, "GR 高对比黑白。黑白两极更开。")
+  { id: "agfa", name: "爱克发", looks: [
+    stock("vista200", "Vista 200", "saturate(1.16) contrast(1.06) sepia(0.16) hue-rotate(-6deg)", "爱克发日常负片。偏暖，红色突出。", { grain: 0.2 }),
+    stock("precisa100", "Precisa 100", "saturate(1.08) contrast(1.06) hue-rotate(12deg) brightness(1.02)", "爱克发反转片。偏冷，青色干净。", { grain: 0.08 }),
+    stock("ultra100", "Ultra 100", "saturate(1.5) contrast(1.12)", "爱克发高饱和负片。", { strength: 0.85, grain: 0.1 }),
+    stock("xproslide", "交叉冲洗", "saturate(1.3) contrast(1.3) hue-rotate(-20deg) sepia(0.2)", "反转片按负片冲洗。反差高，偏黄绿。", { strength: 0.85, grain: 0.2, vignette: 0.3 }),
+    stock("redscale", "红阶", "sepia(0.8) saturate(2.2) hue-rotate(-24deg) contrast(1.1)", "反装胶片，整张偏红橙。", { strength: 0.85, grain: 0.2, vignette: 0.3 }),
+    stock("elitexpro", "精英交叉", "saturate(1.2) contrast(1.2) hue-rotate(16deg) sepia(0.12)", "柯达反转片交叉冲洗。偏青，高光发黄。", { strength: 0.7, grain: 0.16 })
   ]},
-  { id: "hasselblad", name: "哈苏", looks: [
-    stock("hncs", "自然色", "contrast(1.03) saturate(1.05) brightness(1.01)", 0, 0, "Natural Color Solution。干净、准确，几乎不加风格。")
+  { id: "cinema", name: "电影感", looks: [
+    stock("tealorange", "大片", "contrast(1.14) saturate(1.08) sepia(0.16) hue-rotate(-8deg)", "青橙对比。暗部偏青，肤色偏橙。", { halation: 0.15 }),
+    stock("bleachbypass", "跳漂白", "saturate(0.4) contrast(1.32) brightness(1.02)", "低饱和、高反差的电影冲洗。", { strength: 0.8, grain: 0.12 }),
+    stock("crispwarm", "暖阳", "sepia(0.18) saturate(1.1) contrast(1.06) brightness(1.03)", "通透的暖调。"),
+    stock("crispwinter", "冬日", "hue-rotate(14deg) saturate(0.94) contrast(1.06) brightness(1.04)", "通透的冷调。"),
+    stock("softwarming", "柔暖", "sepia(0.12) saturate(1.04)", "轻微的暖调，不改反差。"),
+    stock("latesunset", "日落", "sepia(0.4) saturate(1.3) hue-rotate(-12deg) brightness(1.02)", "像傍晚的橙色光。", { strength: 0.6 }),
+    stock("fallcolors", "秋色", "sepia(0.3) saturate(1.2) hue-rotate(-10deg)", "黄橙加重，绿色压低。"),
+    stock("moonlight", "月光", "hue-rotate(24deg) saturate(0.7) brightness(0.86) contrast(1.06)", "冷蓝、偏暗。", { strength: 0.7 }),
+    stock("foggynight", "雾夜", "hue-rotate(12deg) saturate(0.7) contrast(0.8) brightness(0.96)", "低反差的夜色，发灰偏青。", { strength: 0.7, halation: 0.2 }),
+    stock("candlelight", "烛光", "sepia(0.46) saturate(1.2) brightness(0.98)", "暖黄的室内光。", { strength: 0.75, halation: 0.15 }),
+    stock("tealmagentagold", "霓虹", "saturate(1.4) contrast(1.12) hue-rotate(-18deg)", "青、品红和金色三色分离。", { strength: 0.8 })
   ]},
-  { id: "ilford", name: "依尔福", looks: [
-    stock("hp5", "HP5", "grayscale(1) contrast(1.18) brightness(1.02)", 0.4, 0.1, "HP5 Plus。经典颗粒，宽容度高。"),
-    stock("delta", "德尔塔", "grayscale(1) contrast(1.06) brightness(1.03)", 0.06, 0, "Delta 100。颗粒细，影调平。"),
-    stock("fp4", "FP4", "grayscale(1) contrast(1.12) brightness(1.01)", 0.2, 0.08, "FP4 Plus。传统黑白，颗粒中等。"),
-    stock("xp2", "XP2", "grayscale(1) contrast(1.02) brightness(1.07)", 0.1, 0, "XP2。彩色工艺的黑白，颗粒更润。")
-  ]},
-  { id: "polaroid", name: "宝丽来", looks: [
-    stock("sx70", "SX-70", "sepia(0.3) contrast(0.84) saturate(0.88) brightness(1.1)", 0.22, 0.5, "SX-70。褪色、偏暖、对比低，四角更暗。"),
-    stock("p600", "600", "sepia(0.22) contrast(1.06) saturate(1.08) brightness(1.04)", 0.2, 0.32, "600。比 SX-70 更实，颜色更跳。")
-  ]},
-  { id: "digital", name: "数码", looks: [
-    stock("canon", "佳能", "sepia(0.1) contrast(1.08) saturate(1.08) brightness(1.02)", 0, 0, "佳能直出。略暖，肤色偏红，对比清楚。"),
-    stock("nikon", "尼康", "saturate(1.32) contrast(1.12) hue-rotate(-4deg)", 0, 0, "尼康鲜艳。绿和蓝更开。"),
-    stock("sony", "索尼", "hue-rotate(6deg) contrast(1.04) saturate(1.0) brightness(1.01)", 0, 0, "索尼直出。偏中性，略冷。")
-  ]},
-  { id: "lut-portrait", name: "人像", looks: [
-    lut("lut-ziran", "自然", 0.8), lut("lut-qingtou", "清透", 0.8), lut("lut-wenrou", "温柔", 0.8),
-    lut("lut-baixi", "白皙", 1), lut("lut-fennen", "粉嫩", 0.8), lut("lut-candyb", "糖果", 0.65),
-    lut("lut-dannai", "淡奶", 1), lut("lut-musi", "慕斯", 0.8), lut("lut-zhuguang", "珠光", 1),
-    lut("lut-huoli", "活力", 0.8), lut("lut-qingchun", "青春", 0.8)
-  ]},
-  { id: "lut-scenery", name: "风景", looks: [
-    lut("lut-xuanlan", "绚烂", 1), lut("lut-chengjing", "澄净", 0.8), lut("lut-dushi", "都市", 0.8), lut("lut-jiaoye", "郊野", 0.8)
-  ]},
-  { id: "lut-food", name: "美食", looks: [
-    lut("lut-meiwei", "美味", 0.8), lut("lut-xinxian", "新鲜", 0.8), lut("lut-youge", "优格", 0.8), lut("lut-lengcui", "冷萃", 0.8)
-  ]},
-  { id: "lut-fresh", name: "新锐", looks: [
-    lut("lut-yishigan", "仪式感", 0.8), lut("lut-qingjiaopian", "轻胶片", 0.8), lut("lut-fugu", "复古", 0.8),
-    lut("lut-luoma", "罗马", 1), lut("lut-dianying", "电影", 0.8), lut("lut-huidiao", "灰调", 1)
+  { id: "system", name: "系统", looks: [
+    stock("sys-chrome", "铬黄", "saturate(1.2) contrast(1.1) hue-rotate(6deg)", "Core Image 内置。饱和和反差略高，偏冷。"),
+    stock("sys-fade", "褪色", "saturate(0.7) contrast(0.86) brightness(1.06)", "Core Image 内置。饱和降低，黑位抬起。"),
+    stock("sys-instant", "怀旧", "sepia(0.3) saturate(0.9) contrast(0.94) brightness(1.04)", "Core Image 内置。偏黄的旧照片。"),
+    stock("sys-process", "冲印", "hue-rotate(14deg) saturate(0.9) contrast(1.04)", "Core Image 内置。偏青的冲印色。"),
+    stock("sys-transfer", "岁月", "sepia(0.24) saturate(0.8) contrast(0.9) brightness(1.06)", "Core Image 内置。暖而淡。"),
+    stock("sys-mono", "单色", "grayscale(1) contrast(0.9) brightness(1.04)", "Core Image 内置。低反差黑白。"),
+    stock("sys-tonal", "色调", "grayscale(1) contrast(1.0) brightness(1.02)", "Core Image 内置。灰阶均匀的黑白。"),
+    stock("sys-noir", "黑白", "grayscale(1) contrast(1.4) brightness(0.98)", "Core Image 内置。高反差黑白。")
   ]}
 ];
 
@@ -892,7 +888,7 @@ const hints = {
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
     "上面点分类，只换下面这一排；原图单独在最前",
     "缩略图都是当前画面，点一下立即套用",
-    "点「调节」或再点一次已选滤镜，改强度、褪色、颗粒、暗角。光晕只在大片、雾夜、烛光和新锐「电影」上出现",
+    "点「调节」或再点一次已选滤镜，改强度、褪色、颗粒、暗角。光晕只在大片、雾夜、烛光上出现",
     "点 0.5、1、2 变焦，或在画面上滚动滚轮",
     "点中间的比例，在 4:3、16:9、1:1 之间切换",
     "闪光灯只在后置可用，按 关、开、自动 循环",
@@ -958,41 +954,13 @@ function showScreen(screen) {
   if (screen === "camera") layoutFrame();
 }
 
-const finish = {
-  natural: [4, 0], classic: [10, 0], bright: [2, 0], mono: [6, 0],
-  standard: [4, 0], vivid: [2, 0], soft: [10, 0], chrome: [6, 0], neg: [16, 0], nostalgia: [18, 0],
-  real: [8, 0], cinema: [10, 0], bleach: [8, 0], portrait: [12, 0], "portrait-hi": [14, 0],
-  acros: [5, 0], pro400h: [16, 0], superia: [14, 0],
-  portra160: [12, 0], portra400: [14, 0], portra800: [16, 0], gold: [16, 0], ektar: [4, 0],
-  ultramax: [14, 0], colorplus: [16, 0], kodachrome: [6, 0], ektachrome: [4, 0], trix: [6, 0], tmax: [3, 0],
-  cs800t: [8, 35], cs50d: [6, 0], cs400d: [8, 0], v250d: [6, 0], v500t: [10, 35], trailer: [6, 24],
-  positive: [4, 0], negative: [16, 0], hibw: [8, 0], hncs: [3, 0],
-  hp5: [8, 0], delta: [4, 0], fp4: [6, 0], xp2: [5, 0], sx70: [20, 0], p600: [18, 0],
-  canon: [2, 0], nikon: [2, 0], sony: [2, 0],
-  "lut-dianying": [8, 22]
-};
 function toneOf(look) {
-  if (finish[look.id]) return { fade: finish[look.id][0], halation: finish[look.id][1] };
-  if (look.scheme === "lut" && look.id.startsWith("lut-") && ["ziran","qingtou","wenrou","baixi","fennen","candyb","dannai","musi","zhuguang","huoli","qingchun"].some((name) => look.id.endsWith(name))) {
-    return { fade: 8, halation: 0 };
-  }
-  if (look.scheme === "lut") return { fade: 6, halation: 0 };
-  return { fade: 0, halation: 0 };
+  return { fade: 0, halation: Math.round((look.halation || 0) * 100) };
 }
 function baselineAdjust(look) {
   const tone = toneOf(look);
-  if (look.scheme === "lut") {
-    return {
-      intensity: Math.round((look.strength || 0.8) * 100),
-      fade: tone.fade,
-      halation: tone.halation,
-      clarity: 0,
-      grain: 0,
-      vignette: 0
-    };
-  }
   return {
-    intensity: 100,
+    intensity: Math.round((look.strength ?? 1) * 100),
     fade: tone.fade,
     halation: tone.halation,
     clarity: 30,
@@ -1030,9 +998,6 @@ function renderAdjust() {
   $("adjust-toggle").textContent = open ? "收起" : "调节";
   $("adjust").hidden = !open;
   $("adjust-notice").textContent = state.notice;
-  document.querySelectorAll(".adjust-spatial").forEach((node) => {
-    node.hidden = look.scheme === "lut";
-  });
   document.querySelectorAll(".adjust-halo").forEach((node) => {
     node.hidden = toneOf(look).halation <= 0;
   });

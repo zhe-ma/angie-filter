@@ -43,7 +43,7 @@ struct CameraStatus: Equatable, Sendable {
     var isRunning = false
     var facing: CameraFacing = .back
     var flashMode: FlashMode = .off
-    var aspectRatio: AspectRatio = .fourThree
+    var aspectRatio: AspectRatio = .threeFour
     var zoomFactor: CGFloat = 1
     var displayZoom: CGFloat = 1
     var zoomStops: [ZoomStop] = []

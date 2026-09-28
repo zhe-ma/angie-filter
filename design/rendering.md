@@ -41,7 +41,7 @@ flowchart LR
 | 步骤 | 做法 | 默认 |
 | --- | --- | --- |
 | 褪色 | `CIToneCurve` 抬黑位。滑杆 0 到 1，黑位最多到 0.12，白点略降 | 全部 0 |
-| 光晕 | 亮度走 `CIToneCurve` 取高光，`CIGaussianBlur` 一次，`CIColorMatrix` 染成偏红后 `CIScreenBlendMode`。同一次模糊再叠一层淡白雾，量是光晕的 0.28。半径是宽度的 0.012（预览）或 0.022（成片） | 只有目录里 `halation > 0` 的款有滑杆：大片 0.15、雾夜 0.2、烛光 0.15、新锐「电影」0.22 |
+| 光晕 | 亮度走 `CIToneCurve` 取高光，`CIGaussianBlur` 一次，`CIColorMatrix` 染成偏红后 `CIScreenBlendMode`。同一次模糊再叠一层淡白雾，量是光晕的 0.28。半径是宽度的 0.012（预览）或 0.022（成片） | 只有目录里 `halation > 0` 的款有滑杆：大片 0.15、雾夜 0.2、烛光 0.15 |
 | 颗粒 | 颗粒板用 `CIAffineTile` 平铺，`CISoftLightBlendMode` 叠上，再用亮度曲线做的遮罩 `CIBlendWithMask`：阴影最多，纯白干净。细板横向铺 3 次，粗板 1.7 次 | 按感光度写在目录里，0.05 到 0.45。没有写板的款拉高颗粒时用细板 |
 | 暗角 | `CIVignetteEffect`，圆心在画面中心，半径是半对角线的 0.85，衰减 0.6，强度是暗角量乘 0.35。量为 1 时四角压暗三分之一左右，滑杆上限 1.5 | 拍立得 0.3 到 0.4、交叉冲洗和红阶 0.3、柯达克罗姆 0.15，其余 0 |
 
@@ -55,7 +55,6 @@ flowchart LR
 | --- | --- | --- | --- |
 | RawTherapee Film Simulation Collection 2015-09-20（Pat David、Pavlov Dmitry、Michael Ezra） | 62 | CC BY-SA 4.0 | `Resources/FilmLUTs/film-<id>.png` |
 | Core Image 照片效果 | 8 | 系统自带 | 不占资源 |
-| 人像、风景、美食、新锐 LUT | 25 | 仓库已有 | `Resources/LUTs/<name>.png` |
 
 胶片 LUT 的署名和改动说明在 `Resources/FilmLUTs/FilmSimulation-LICENSE.txt`，跟着应用一起打包。CC BY-SA 要求署名、给出许可链接、注明改动，改过的 LUT 仍按 CC BY-SA 发布。以后上架时，应用里要有一处能看到这段署名。
 
@@ -83,7 +82,7 @@ swiftc -O Tools/ImportFilmLUTs.swift -o /tmp/import-luts
 2. 三线性插值重采样成 64³，写成 512×512 PNG，布局同下一节。每款抽 2000 个格点和 HaldCLUT 直接插值比较，差不超过 1/255。
 3. 删掉 `FilmLUTs/` 里目录已经不用的 `film-*.png`。
 4. 用固定种子重写两张颗粒板。
-5. 重写 `Looks.json`：原图、八款内置、胶片款。`LUTLooks.json` 不动。
+5. 重写 `Looks.json`：原图、八款内置、胶片款。
 
 改名称、说明、默认强度、颗粒、暗角、光晕，或者增删一款，都在脚本顶部的目录里改，然后重跑。分组在 `LookLibrary.familySpecs`。
 
@@ -97,11 +96,11 @@ swiftc -O Tools/ImportFilmLUTs.swift -o /tmp/import-luts
 
 立方体维度是 64。iOS 的 `CIColorCube` 只接受 2 到 64，给 65 时滤镜不出图，画面原样通过；macOS 上限是 128，只在 Mac 上验证查不出来。
 
-扩展名是 `.png` 的文件必须真的是 PNG。Xcode 打包时会用 pngcrush 处理 PNG，遇到其实是 JPEG 的文件会报 `libpng error` 并把它漏掉，那一款在真机上就是原图。「淡奶」以前就是这样，已经重新存成 PNG。
+扩展名是 `.png` 的文件必须真的是 PNG。Xcode 打包时会用 pngcrush 处理 PNG，遇到其实是 JPEG 的文件会报 `libpng error` 并把它漏掉，那一款在真机上就是原图。
 
 ## 目录 JSON
 
-`Looks.json` 由导入脚本写出，`LUTLooks.json` 手写。两份字段相同，`LookLibrary` 先读前者再接上后者，id 重复时保留先读到的。原图必须存在，id 是 `original`。
+`Looks.json` 由导入脚本写出，是唯一的目录。原图必须存在，id 是 `original`。
 
 | 字段 | 类型 | 含义 |
 | --- | --- | --- |

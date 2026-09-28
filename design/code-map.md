@@ -17,7 +17,7 @@ AngieFilter/
   Features/             SwiftUI
     Camera/             取景
     Review/             确认
-  Resources/            胶片 LUT、其余 LUT、颗粒板、目录 JSON
+  Resources/            胶片 LUT、颗粒板、目录 JSON
 ```
 
 Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 import SwiftUI。`CVPixelBuffer` 和 `CIImage` 留在 CameraPipeline。
@@ -32,7 +32,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 
 | 类型 | 作用 |
 | --- | --- |
-| `AspectRatio` | 4:3、16:9、1:1，以及下一档 |
+| `AspectRatio` | 八种画幅，标签是宽:高 |
 | `AspectCrop` | 转正之后按画幅做中心裁切 |
 | `CameraFacing` | 后置或前置 |
 | `FlashMode` | 关、开、自动 |
@@ -46,7 +46,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `LUTGrade` | LUT 图文件名和默认强度 |
 | `BuiltInGrade` | Core Image 滤镜名 |
 | `LookFamily` | 一个分类，成员是 `Look` |
-| `LookLibrary` | 读 `Looks.json`，再接上 `LUTLooks.json` |
+| `LookLibrary` | 读 `Looks.json` |
 | `LookAdjustment` | 这一次打开里改过的强度、褪色、光晕、颗粒和暗角 |
 | `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量、双摄排列 |
 | `DualLayout` | 上下、左右、画中画、圆窗、叠加 |

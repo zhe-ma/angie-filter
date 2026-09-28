@@ -48,12 +48,7 @@ final class LUTStore: @unchecked Sendable {
     }
 
     private static func loadImage(named name: String) -> CGImage? {
-        let url = ["FilmLUTs", "LUTs", "Resources/FilmLUTs", "Resources/LUTs"]
-            .lazy
-            .compactMap { Bundle.main.url(forResource: name, withExtension: "png", subdirectory: $0) }
-            .first
-            ?? Bundle.main.url(forResource: name, withExtension: "png")
-        guard let url,
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil),
               cgImage.width == side, cgImage.height == side else {

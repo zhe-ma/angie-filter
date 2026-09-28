@@ -24,37 +24,14 @@ enum LookLibrary {
         grade: .none
     )
 
-    /// Film and built-in looks ship in Looks.json. The portrait, scenery, food, and fresh LUTs ship in LUTLooks.json and are appended.
     private static func load() -> [Look] {
-        let recipes = records(named: "Looks")
-        guard !recipes.isEmpty else { return [original] }
-        var seen = Set(recipes.map(\.id))
-        var looks = recipes
-        for look in records(named: "LUTLooks") where seen.insert(look.id).inserted {
-            looks.append(look)
-        }
-        return looks
-    }
-
-    private static func records(named name: String) -> [Look] {
-        let url = Bundle.main.url(forResource: name, withExtension: "json")
-            ?? Bundle.main.url(forResource: name, withExtension: "json", subdirectory: "Resources")
-            ?? bundledFile(named: "\(name).json")
-        guard let url,
+        guard let url = Bundle.main.url(forResource: "Looks", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let records = try? JSONDecoder().decode([LookRecord].self, from: data) else {
-            return []
+            return [original]
         }
-        return records.compactMap(\.look)
-    }
-
-    private static func bundledFile(named name: String) -> URL? {
-        guard let root = Bundle.main.resourceURL else { return nil }
-        let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
-        while let url = enumerator?.nextObject() as? URL {
-            if url.lastPathComponent == name { return url }
-        }
-        return nil
+        let looks = records.compactMap(\.look)
+        return looks.isEmpty ? [original] : looks
     }
 
     private static let familySpecs: [(id: String, name: String, ids: [String])] = [
@@ -65,11 +42,7 @@ enum LookLibrary {
         ("mono", "黑白", ["hp5", "delta100", "delta3200", "fp4", "panf50", "xp2", "apx100", "retro100", "ortho25", "infrared"]),
         ("agfa", "爱克发", ["vista200", "precisa100", "ultra100", "xproslide", "redscale", "elitexpro"]),
         ("cinema", "电影感", ["tealorange", "bleachbypass", "crispwarm", "crispwinter", "softwarming", "latesunset", "fallcolors", "moonlight", "foggynight", "candlelight", "tealmagentagold"]),
-        ("system", "系统", ["sys-chrome", "sys-fade", "sys-instant", "sys-process", "sys-transfer", "sys-mono", "sys-tonal", "sys-noir"]),
-        ("lut-portrait", "人像", ["lut-ziran", "lut-qingtou", "lut-wenrou", "lut-baixi", "lut-fennen", "lut-candyb", "lut-dannai", "lut-musi", "lut-zhuguang", "lut-huoli", "lut-qingchun"]),
-        ("lut-scenery", "风景", ["lut-xuanlan", "lut-chengjing", "lut-dushi", "lut-jiaoye"]),
-        ("lut-food", "美食", ["lut-meiwei", "lut-xinxian", "lut-youge", "lut-lengcui"]),
-        ("lut-fresh", "新锐", ["lut-yishigan", "lut-qingjiaopian", "lut-fugu", "lut-luoma", "lut-dianying", "lut-huidiao"])
+        ("system", "系统", ["sys-chrome", "sys-fade", "sys-instant", "sys-process", "sys-transfer", "sys-mono", "sys-tonal", "sys-noir"])
     ]
 
     private static func makeFamilies() -> [LookFamily] {
@@ -89,9 +62,6 @@ enum LookLibrary {
         let rest = looks.filter { !used.contains($0.id) }
         if !rest.isEmpty {
             result.append(LookFamily(id: "other", name: "其他", looks: rest))
-        }
-        if result.isEmpty {
-            return [LookFamily(id: "original", name: "原图", looks: [original])]
         }
         return result
     }

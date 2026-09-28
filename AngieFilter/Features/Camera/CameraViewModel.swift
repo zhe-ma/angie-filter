@@ -40,7 +40,7 @@ private enum ThumbnailBake {
 @MainActor
 final class CameraViewModel: ObservableObject {
     @Published private(set) var status = CameraStatus()
-    @Published var aspectRatio: AspectRatio = .fourThree
+    @Published var aspectRatio: AspectRatio = .threeFour
     @Published var lookID = Look.originalID
     @Published var adjustOpen = false
     @Published var draft = LookAdjustment()
@@ -152,8 +152,9 @@ final class CameraViewModel: ObservableObject {
         LookLibrary.family(id: familyID)?.looks ?? [LookLibrary.original]
     }
 
-    func cycleAspect() {
-        aspectRatio = aspectRatio.next()
+    func setAspect(_ ratio: AspectRatio) {
+        guard aspectRatio != ratio else { return }
+        aspectRatio = ratio
         syncParameters()
     }
 
@@ -503,7 +504,6 @@ final class CameraViewModel: ObservableObject {
         }
         insetDragDecided = true
         insetDragOrigin = nil
-        guard (dualOn ? dualSelected : status.facing) == .back else { return }
         let factor = pinchStart * scale
         if dualOn {
             dualSession.setZoom(factor: factor)
