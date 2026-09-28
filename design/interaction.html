@@ -168,6 +168,32 @@
     z-index: 3;
   }
   .look-name { font-size: 13px; letter-spacing: .08em; color: rgba(255,255,255,.86); min-height: 16px; }
+  .adjust-head { width: min(360px, 92%); display: flex; align-items: center; gap: 8px; }
+  .adjust-notice { font-size: 12px; color: rgba(255,255,255,.55); }
+  .adjust-toggle, .save-adjust {
+    margin-left: auto;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 14px;
+    background: #fff;
+    color: #111;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .adjust {
+    width: min(360px, 92%);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: rgba(255,255,255,.7);
+    font-size: 12px;
+  }
+  .adjust[hidden] { display: none; }
+  .adjust label { display: flex; align-items: center; gap: 8px; }
+  .adjust input { flex: 1; accent-color: #fff; }
+  .adjust label span { width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+  .adjust-actions { display: flex; justify-content: space-between; align-items: center; }
+  .adjust-actions button { color: rgba(255,255,255,.8); font-size: 13px; }
   .intensity {
     width: min(280px, 78%);
     display: none;
@@ -407,12 +433,22 @@
         </div>
         <footer class="dock">
           <div class="filter-panel" id="filter-panel" hidden>
-            <div class="look-name" id="look-name">原图</div>
-            <div class="intensity" id="intensity">
-              <span>强度</span>
-              <input id="intensity-range" type="range" min="0" max="100" value="100">
-              <span id="intensity-value">100</span>
+            <div class="adjust-head">
+              <div class="look-name" id="look-name">原图</div>
+              <span class="adjust-notice" id="adjust-notice"></span>
+              <button class="adjust-toggle" id="adjust-toggle" data-action="adjust" hidden>调节</button>
             </div>
+            <div class="adjust" id="adjust" hidden>
+              <label>强度 <input id="adj-intensity" data-adjust="intensity" type="range" min="0" max="100" value="100"><span id="adj-intensity-value">100</span></label>
+              <label>清晰度 <input id="adj-clarity" data-adjust="clarity" type="range" min="0" max="100" value="30"><span id="adj-clarity-value">30</span></label>
+              <label>颗粒 <input id="adj-grain" data-adjust="grain" type="range" min="0" max="100" value="0"><span id="adj-grain-value">0</span></label>
+              <label>暗角 <input id="adj-vignette" data-adjust="vignette" type="range" min="0" max="100" value="0"><span id="adj-vignette-value">0</span></label>
+              <div class="adjust-actions">
+                <button data-action="reset-adjust">恢复默认</button>
+                <button class="save-adjust" data-action="save-adjust">保存</button>
+              </div>
+            </div>
+            <div class="families" id="families"></div>
             <div class="strip-wrap"><div class="strip" id="strip"></div></div>
           </div>
           <div class="shutter-row">
@@ -446,7 +482,7 @@
 
   <aside class="notes">
     <h1>AngieFilter 交互</h1>
-    <p class="lead">取景默认尽量大。滤镜收在右下角按钮里，徕卡、富士和其余风格在同一排，都能看到当前画面的预览。</p>
+    <p class="lead">取景默认尽量大。滤镜收在右下角按钮里。展开后上面选分类，下面只显示这一类的预览。</p>
     <div class="card">
       <h2>路径</h2>
       <div class="flow">
@@ -465,7 +501,7 @@
     </div>
     <div class="card">
       <h2>刚才发生了什么</h2>
-      <p class="now" id="now">取景页尽量留给画面。点右下角「滤镜」才展开滤镜，徕卡、富士和其余风格在同一排。</p>
+      <p class="now" id="now">取景页尽量留给画面。点右下角「滤镜」才展开。上面是分类，下面是这一类的预览。</p>
     </div>
     <div class="card">
       <h2>这一屏可以做</h2>
@@ -480,15 +516,14 @@ function stock(id, name, grade, grain, vignette, about) {
 const plain = stock("original", "原图", "none", 0, 0, "不套风格。");
 
 const catalog = [
+  { id: "original", name: "原图", looks: [plain] },
   { id: "leica", name: "徕卡", looks: [
-    plain,
     stock("natural", "自然", "contrast(1.06) saturate(1.08) sepia(0.12) brightness(1.03)", 0.05, 0, "现代徕卡数码色彩。略暖，肤色稳，微对比明显。"),
     stock("classic", "经典", "contrast(0.98) saturate(1.14) sepia(0.28) brightness(1.04)", 0.12, 0.25, "胶片时代的 M 型色彩。红色更厚，高光更早滚落。"),
     stock("bright", "鲜明", "contrast(1.2) saturate(1.08) brightness(0.98)", 0, 0, "对比更高，黑色更实，色彩仍然自然。"),
     stock("mono", "单色", "grayscale(1) contrast(1.22) brightness(1.03)", 0.22, 0.15, "黑白，阴影有层次，细颗粒。")
   ]},
   { id: "fuji", name: "富士", looks: [
-    plain,
     stock("standard", "标准", "contrast(1.05) saturate(1.08)", 0.04, 0, "Provia。中性参照。"),
     stock("vivid", "鲜艳", "saturate(1.7) contrast(1.12) hue-rotate(-8deg)", 0.04, 0, "Velvia。风景向，绿和红分开。"),
     stock("soft", "柔和", "saturate(0.8) contrast(0.9) brightness(1.07) sepia(0.08)", 0.06, 0, "Astia。人像优先，对比低。"),
@@ -505,7 +540,6 @@ const catalog = [
     stock("superia", "超级丽爱", "saturate(1.12) hue-rotate(12deg) contrast(1.06) sepia(0.08)", 0.22, 0.1, "Superia 400。消费负片，绿色更明显。")
   ]},
   { id: "kodak", name: "柯达", looks: [
-    plain,
     stock("portra160", "肖像 160", "contrast(0.9) saturate(0.92) sepia(0.1) brightness(1.07)", 0.08, 0.08, "Portra 160。颗粒最细，肤色最柔。"),
     stock("portra400", "肖像 400", "contrast(0.98) saturate(1.0) sepia(0.16) brightness(1.04)", 0.18, 0.1, "Portra 400。人像胶片里最常用的一款。"),
     stock("portra800", "肖像 800", "contrast(0.94) saturate(0.88) sepia(0.22) brightness(1.05)", 0.34, 0.16, "Portra 800。更暖，颗粒更明显。"),
@@ -519,7 +553,6 @@ const catalog = [
     stock("tmax", "黑白细", "grayscale(1) contrast(1.08) brightness(1.04)", 0.08, 0, "T-Max 100。颗粒细，影调平滑。")
   ]},
   { id: "cinema", name: "电影", looks: [
-    plain,
     stock("cs800t", "800T", "saturate(0.82) contrast(1.08) hue-rotate(22deg) brightness(0.96) sepia(0.06)", 0.32, 0.22, "Cinestill 800T。钨丝灯光，偏青，高光周围有红晕。"),
     stock("cs50d", "50D", "saturate(1.06) contrast(1.02) sepia(0.08) brightness(1.04)", 0.06, 0.06, "Cinestill 50D。日光电影卷，干净，略暖。"),
     stock("cs400d", "400D", "saturate(1.02) contrast(1.04) sepia(0.12) brightness(1.03)", 0.16, 0.1, "Cinestill 400D。日光，颗粒介于 50D 和 800T 之间。"),
@@ -527,29 +560,24 @@ const catalog = [
     stock("v500t", "灯光 500", "saturate(0.92) contrast(1.06) hue-rotate(14deg) brightness(0.98)", 0.14, 0.12, "Vision3 500T。钨丝灯电影底片，比 800T 更干净。")
   ]},
   { id: "ricoh", name: "理光", looks: [
-    plain,
     stock("positive", "正片", "contrast(1.18) saturate(1.14) hue-rotate(8deg) brightness(0.99)", 0, 0, "GR 正片。街拍直出，略偏青，对比清楚。"),
     stock("negative", "负片", "contrast(0.94) saturate(0.96) sepia(0.12) brightness(1.05)", 0.1, 0.08, "GR 负片。更软，略暖。"),
     stock("hibw", "高对比黑白", "grayscale(1) contrast(1.4) brightness(0.98)", 0.16, 0.2, "GR 高对比黑白。黑白两极更开。")
   ]},
   { id: "hasselblad", name: "哈苏", looks: [
-    plain,
     stock("hncs", "自然色", "contrast(1.03) saturate(1.05) brightness(1.01)", 0, 0, "Natural Color Solution。干净、准确，几乎不加风格。")
   ]},
   { id: "ilford", name: "依尔福", looks: [
-    plain,
     stock("hp5", "HP5", "grayscale(1) contrast(1.18) brightness(1.02)", 0.4, 0.1, "HP5 Plus。经典颗粒，宽容度高。"),
     stock("delta", "德尔塔", "grayscale(1) contrast(1.06) brightness(1.03)", 0.06, 0, "Delta 100。颗粒细，影调平。"),
     stock("fp4", "FP4", "grayscale(1) contrast(1.12) brightness(1.01)", 0.2, 0.08, "FP4 Plus。传统黑白，颗粒中等。"),
     stock("xp2", "XP2", "grayscale(1) contrast(1.02) brightness(1.07)", 0.1, 0, "XP2。彩色工艺的黑白，颗粒更润。")
   ]},
   { id: "polaroid", name: "宝丽来", looks: [
-    plain,
     stock("sx70", "SX-70", "sepia(0.3) contrast(0.84) saturate(0.88) brightness(1.1)", 0.22, 0.5, "SX-70。褪色、偏暖、对比低，四角更暗。"),
     stock("p600", "600", "sepia(0.22) contrast(1.06) saturate(1.08) brightness(1.04)", 0.2, 0.32, "600。比 SX-70 更实，颜色更跳。")
   ]},
   { id: "digital", name: "数码", looks: [
-    plain,
     stock("canon", "佳能", "sepia(0.1) contrast(1.08) saturate(1.08) brightness(1.02)", 0, 0, "佳能直出。略暖，肤色偏红，对比清楚。"),
     stock("nikon", "尼康", "saturate(1.32) contrast(1.12) hue-rotate(-4deg)", 0, 0, "尼康鲜艳。绿和蓝更开。"),
     stock("sony", "索尼", "hue-rotate(6deg) contrast(1.04) saturate(1.0) brightness(1.01)", 0, 0, "索尼直出。偏中性，略冷。")
@@ -559,9 +587,12 @@ const catalog = [
 const state = {
   screen: "camera",
   filtersOpen: false,
+  familyId: "original",
   lookId: "original",
-  intensity: 100,
-  intensityOpen: false,
+  adjustOpen: false,
+  notice: "",
+  memory: {},
+  draft: { intensity: 100, clarity: 30, grain: 0, vignette: 0 },
   aspect: "4:3",
   flash: "off",
   facing: "back",
@@ -572,8 +603,9 @@ const hints = {
   camera: [
     "点画面对焦",
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
-    "徕卡、富士和其余风格在同一排，缩略图都是当前画面",
-    "点滤镜立即套用；再点一次已选滤镜才出现强度",
+    "上面点分类，只换下面这一排；原图单独在最前",
+    "缩略图都是当前画面，点一下立即套用",
+    "点「调节」或再点一次已选滤镜，改强度、清晰度、颗粒、暗角，保存后留在这次打开里",
     "点 0.5、1、2 变焦，或在画面上滚动滚轮",
     "点中间的比例，在 4:3、16:9、1:1 之间切换",
     "闪光灯只在后置可用，按 关、开、自动 循环",
@@ -593,20 +625,21 @@ const hints = {
 const $ = (id) => document.getElementById(id);
 let zoomTimer = 0;
 
-const filters = [plain];
-{
-  const seen = new Set(["original"]);
-  for (const family of catalog) {
-    for (const look of family.looks) {
-      if (seen.has(look.id)) continue;
-      seen.add(look.id);
-      filters.push(look);
-    }
-  }
+function familyById(id) {
+  return catalog.find((family) => family.id === id) || catalog[0];
 }
-function currentList() { return filters; }
+function familyOfLook(lookId) {
+  return catalog.find((family) => family.looks.some((look) => look.id === lookId)) || catalog[0];
+}
+function currentList() {
+  return familyById(state.familyId).looks;
+}
 function currentLook() {
-  return currentList().find((look) => look.id === state.lookId) || currentList()[0];
+  for (const family of catalog) {
+    const look = family.looks.find((item) => item.id === state.lookId);
+    if (look) return look;
+  }
+  return plain;
 }
 function zoomStops() { return state.facing === "back" ? [0.5, 1, 2] : [1]; }
 
@@ -624,23 +657,49 @@ function showScreen(screen) {
   if (screen === "camera") layoutFrame();
 }
 
-function applyGrade(root, look, intensity) {
-  const mix = look.id === "original" ? 0 : intensity / 100;
+function baselineAdjust(look) {
+  return {
+    intensity: 100,
+    clarity: 30,
+    grain: Math.round((look.grain || 0) * 100),
+    vignette: Math.round((look.vignette || 0) * 100)
+  };
+}
+function activeAdjust(look) {
+  if (look.id === "original") return baselineAdjust(look);
+  if (state.adjustOpen) return state.draft;
+  return state.memory[look.id] || baselineAdjust(look);
+}
+function applyGrade(root, look) {
+  const adjust = activeAdjust(look);
+  const mix = look.id === "original" ? 0 : adjust.intensity / 100;
   root.style.setProperty("--grade", look.grade);
   root.style.setProperty("--mix", String(mix));
-  root.style.setProperty("--grain", String(look.grain * mix));
-  root.style.setProperty("--vignette", String(look.vignette * mix));
+  root.style.setProperty("--grain", String((adjust.grain / 100) * mix));
+  root.style.setProperty("--vignette", String((adjust.vignette / 100) * mix));
   root.style.setProperty("--zoom", String(state.zoom));
   root.querySelectorAll(".art").forEach((art) => art.classList.toggle("mirror", state.facing === "front"));
 }
 
+function renderAdjust() {
+  const look = currentLook();
+  const open = state.adjustOpen && look.id !== "original";
+  $("adjust-toggle").hidden = look.id === "original";
+  $("adjust-toggle").textContent = open ? "收起" : "调节";
+  $("adjust").hidden = !open;
+  $("adjust-notice").textContent = state.notice;
+  if (open) {
+    for (const key of ["intensity", "clarity", "grain", "vignette"]) {
+      $(`adj-${key}`).value = String(state.draft[key]);
+      $(`adj-${key}-value`).textContent = String(state.draft[key]);
+    }
+  }
+}
 function renderLook() {
   const look = currentLook();
   $("look-name").textContent = look.name;
-  $("intensity").classList.toggle("open", state.intensityOpen && look.id !== "original");
-  $("intensity-range").value = String(state.intensity);
-  $("intensity-value").textContent = String(state.intensity);
-  applyGrade($("stack"), look, state.intensity);
+  renderAdjust();
+  applyGrade($("stack"), look);
   document.querySelectorAll(".look").forEach((node) => {
     node.classList.toggle("selected", node.dataset.id === look.id);
   });
@@ -651,7 +710,16 @@ function renderLook() {
   $("applied").textContent = !state.filtersOpen && look.id !== "original" ? look.name : "";
 }
 
+function renderFamilies() {
+  $("families").innerHTML = catalog.map((family) => `
+    <button data-action="family" data-id="${family.id}" class="${family.id === state.familyId ? "active" : ""}">${family.name}</button>
+  `).join("");
+  const active = $("families").querySelector(".active");
+  if (active) active.scrollIntoView({ inline: "center", block: "nearest" });
+}
+
 function renderStrip() {
+  renderFamilies();
   const strip = $("strip");
   strip.innerHTML = currentList().map((look) => `
     <button class="look" data-action="look" data-id="${look.id}">
@@ -726,7 +794,7 @@ function paintReview() {
   }
   frame.style.width = `${width}px`;
   frame.style.height = `${height}px`;
-  applyGrade($("review-stack"), look, state.intensity);
+  applyGrade($("review-stack"), look);
 }
 
 function flashOverlay() {
@@ -741,19 +809,29 @@ function flashOverlay() {
   setTimeout(() => veil.remove(), 200);
 }
 
+function openAdjust(look) {
+  state.draft = { ...(state.memory[look.id] || baselineAdjust(look)) };
+  state.adjustOpen = true;
+  state.notice = "";
+}
 function onLook(id) {
   const look = currentList().find((item) => item.id === id);
   if (!look) return;
   if (state.lookId === id && id !== "original") {
-    state.intensityOpen = !state.intensityOpen;
-    explain(state.intensityOpen ? `再次点了「${look.name}」，强度条出现。拖动它会在原图和这款风格之间混合。` : "强度条收起。风格仍然留在画面上。");
+    if (state.adjustOpen) {
+      state.adjustOpen = false;
+      explain("调节收起。没点保存的改动不会留下。");
+    } else {
+      openAdjust(look);
+      explain(`调节「${look.name}」。改完点保存，这次打开里会记住。`);
+    }
   } else {
     state.lookId = id;
-    state.intensityOpen = false;
-    if (id !== "original") state.intensity = 100;
+    state.adjustOpen = false;
+    state.notice = "";
     explain(id === "original"
-      ? "回到原图。原图没有强度。"
-      : `已套用「${look.name}」。${look.about}再点一次可以调强度。`);
+      ? "回到原图。原图不能调节。"
+      : `已套用「${look.name}」。${look.about}可以点调节改参数。`);
   }
   renderLook();
 }
@@ -763,17 +841,22 @@ $("phone").addEventListener("click", (event) => {
   if (!target || target.disabled) return;
   const action = target.dataset.action;
   if (action === "filters") {
+    const opening = !state.filtersOpen;
     state.filtersOpen = !state.filtersOpen;
-    if (!state.filtersOpen) state.intensityOpen = false;
-    renderLook();
+    if (!state.filtersOpen) state.adjustOpen = false;
+    if (opening) state.familyId = familyOfLook(state.lookId).id;
+    renderStrip();
     requestAnimationFrame(layoutFrame);
     if (state.filtersOpen) {
-      const selected = document.querySelector(".look.selected");
-      if (selected) selected.scrollIntoView({ inline: "center", block: "nearest" });
-      explain("滤镜面板打开。左右滑动，每张缩略图都是当前画面的预览。");
+      explain("滤镜面板打开。上面选分类，下面是这一类的预览。");
     } else {
       explain("滤镜面板收起，取景区域恢复。");
     }
+  } else if (action === "family") {
+    state.familyId = target.dataset.id;
+    state.adjustOpen = false;
+    renderStrip();
+    explain(`分类换成「${familyById(state.familyId).name}」。点下面的缩略图才会套用。`);
   } else if (action === "look") {
     onLook(target.dataset.id);
   } else if (action === "zoom") {
@@ -823,6 +906,30 @@ $("phone").addEventListener("click", (event) => {
   } else if (action === "back-camera") {
     showScreen("camera");
     explain("回到取景。");
+  } else if (action === "adjust") {
+    const look = currentLook();
+    if (state.adjustOpen) {
+      state.adjustOpen = false;
+      explain("调节收起。没点保存的改动不会留下。");
+    } else {
+      openAdjust(look);
+      explain(`调节「${look.name}」。改完点保存，这次打开里会记住。`);
+    }
+    renderLook();
+  } else if (action === "reset-adjust") {
+    state.draft = baselineAdjust(currentLook());
+    state.notice = "";
+    renderLook();
+    explain("滑杆回到这款滤镜的默认参数。要点保存才会写进内存。");
+  } else if (action === "save-adjust") {
+    const look = currentLook();
+    const base = baselineAdjust(look);
+    const same = ["intensity", "clarity", "grain", "vignette"].every((key) => state.draft[key] === base[key]);
+    if (same) delete state.memory[look.id];
+    else state.memory[look.id] = { ...state.draft };
+    state.notice = "已保存";
+    renderLook();
+    explain(`「${look.name}」的参数已保存在这次打开的内存里。`);
   }
 });
 
@@ -835,7 +942,7 @@ $("finder").addEventListener("click", (event) => {
   if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
   if (state.filtersOpen) {
     state.filtersOpen = false;
-    state.intensityOpen = false;
+    state.adjustOpen = false;
     renderLook();
     requestAnimationFrame(layoutFrame);
   }
@@ -861,11 +968,12 @@ $("finder").addEventListener("wheel", (event) => {
   zoomTimer = setTimeout(() => $("zoom-hud").classList.remove("show"), 700);
 }, { passive: false });
 
-$("intensity-range").addEventListener("input", () => {
-  state.intensity = Number($("intensity-range").value);
-  $("intensity-value").textContent = String(state.intensity);
+$("adjust").addEventListener("input", (event) => {
+  const key = event.target.dataset.adjust;
+  if (!key) return;
+  state.draft[key] = Number(event.target.value);
+  state.notice = "";
   renderLook();
-  explain(`「${currentLook().name}」强度 ${state.intensity}。0 是原图，100 是完整风格。`);
 });
 
 document.querySelector(".notes").addEventListener("click", (event) => {

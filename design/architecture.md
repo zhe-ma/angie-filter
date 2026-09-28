@@ -31,7 +31,7 @@ flowchart TB
 | `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值。界面不读 `AVCaptureDevice` |
 | `RenderParameters`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照 |
 
-`RenderParameters` 的字段：`aspectRatio`、`lookID`、`intensity`（0–1，界面显示为 0–100）、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。
+`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`（`LookAdjustment`：强度、清晰度、颗粒、暗角）、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）。调节后的数值按滤镜 id 记在 `CameraViewModel` 的内存字典里，不写磁盘。缩略图始终用这款滤镜的默认参数。
 
 Domain 里没有 `CameraEffect`，也没有 `LookFamily`。风格是数据，节点留在 CameraPipeline，因为入参是 `CIImage`。
 
@@ -91,7 +91,7 @@ ViewModel 发意图：变焦、切换风格、快门、画幅、闪光灯、翻�
 
 这些协议没有进当前代码。界面持有具体的 `CameraSessionController`，用 `onStatus`、`onPhoto`、`onFailure` 三个闭包回传。渲染入口是 `GradeApplicator.apply`。存图入口是 `PhotoLibraryStore.save`。相册失败是 `PhotoLibraryError`。会话失败目前是字符串，经 `onFailure` 变成界面横幅。
 
-`LUT` 只出现在资源说明里。类型名用 `ColorCube`。强度属性是 `intensity`，镜像是 `mirrorHorizontally`，画幅是 `aspectRatio`。
+`LUT` 只出现在资源说明里。类型名用 `ColorCube`。调节参数在 `LookAdjustment`，镜像是 `mirrorHorizontally`，画幅是 `aspectRatio`。
 
 ## 数据流
 
@@ -107,4 +107,4 @@ flowchart LR
   review --> save[PhotoLibraryStore]
 ```
 
-缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对目录里每一款调用 `GradeApplicator.apply`，强度 1，质量 `preview`。面板打开时大约每 0.6 秒刷新一次。
+缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类里的风格调用 `GradeApplicator.apply`，强度 1，质量 `preview`。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。

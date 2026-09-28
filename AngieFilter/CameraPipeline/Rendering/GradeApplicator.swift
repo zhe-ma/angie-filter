@@ -2,14 +2,14 @@ import CoreImage
 import Foundation
 
 enum GradeApplicator {
-    static func apply(_ image: CIImage, look: Look, intensity: Float, quality: RenderQuality) -> CIImage {
-        let amount = min(max(intensity, 0), 1)
+    static func apply(_ image: CIImage, look: Look, adjustment: LookAdjustment, quality: RenderQuality) -> CIImage {
+        let amount = min(max(adjustment.intensity, 0), 1)
         guard amount > 0.001, !look.isOriginal else { return image }
 
         var graded = applyCube(image, name: look.colorCubeName)
-        graded = applyClarity(graded, amount: look.clarity, quality: quality)
-        graded = applyGrain(graded, look: look)
-        graded = applyVignette(graded, amount: look.vignette, quality: quality)
+        graded = applyClarity(graded, amount: adjustment.clarity, quality: quality)
+        graded = applyGrain(graded, plate: look.grainPlate, amount: adjustment.grain)
+        graded = applyVignette(graded, amount: adjustment.vignette, quality: quality)
         return mix(image, graded, amount: amount)
     }
 
@@ -53,12 +53,13 @@ enum GradeApplicator {
         ]).cropped(to: image.extent)
     }
 
-    private static func applyGrain(_ image: CIImage, look: Look) -> CIImage {
-        guard look.grain > 0.001, let plate = GrainLibrary.image(for: look.grainPlate) else { return image }
+    private static func applyGrain(_ image: CIImage, plate plateKind: GrainPlateKind, amount: Float) -> CIImage {
+        let resolved: GrainPlateKind = plateKind == .none && amount > 0.001 ? .fine : plateKind
+        guard amount > 0.001, let plate = GrainLibrary.image(for: resolved) else { return image }
         let extent = image.extent
         guard extent.width > 1, plate.extent.width > 1 else { return image }
 
-        let repeats: CGFloat = look.grainPlate == .coarse ? 1.7 : 3
+        let repeats: CGFloat = resolved == .coarse ? 1.7 : 3
         let scale = (extent.width / repeats) / plate.extent.width
         let tiled = plate
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
@@ -72,7 +73,7 @@ enum GradeApplicator {
             kCIInputBackgroundImageKey: image,
             kCIInputMaskImageKey: mask
         ]).cropped(to: extent)
-        return mix(image, masked, amount: look.grain)
+        return mix(image, masked, amount: amount)
     }
 
     /// Grain stays in the midtones. Deep black and pure white stay clean.

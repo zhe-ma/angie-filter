@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FilterStripView: View {
     let looks: [Look]
+    let familyID: String
     let selectedID: Look.ID
     let thumbnails: [Look.ID: UIImage]
 
@@ -38,14 +39,25 @@ struct FilterStripView: View {
                 .padding(.horizontal, 16)
             }
             .onAppear {
-                proxy.scrollTo(selectedID, anchor: .center)
+                scroll(proxy, to: selectedID)
             }
             .onChange(of: selectedID) { _, id in
                 withAnimation {
-                    proxy.scrollTo(id, anchor: .center)
+                    scroll(proxy, to: id)
+                }
+            }
+            .onChange(of: familyID) { _, _ in
+                let target = looks.contains { $0.id == selectedID } ? selectedID : looks.first?.id
+                if let target {
+                    proxy.scrollTo(target, anchor: .center)
                 }
             }
         }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to id: Look.ID) {
+        guard looks.contains(where: { $0.id == id }) else { return }
+        proxy.scrollTo(id, anchor: .center)
     }
 
     @ViewBuilder

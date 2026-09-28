@@ -6,7 +6,7 @@
 
 ## 顺序
 
-几何在 `FrameImageMaker`，风格在 `GradeApplicator.apply(_:look:intensity:quality:)`。
+几何在 `FrameImageMaker`，风格在 `GradeApplicator.apply(_:look:adjustment:quality:)`。颜色立方体不变。运行时只改强度、清晰度、颗粒量和暗角。颗粒为 0 的滤镜如果把颗粒调高，用细颗粒板。
 
 1. 方向、前置镜像、画幅中心裁切
 2. 工作空间 Display P3
@@ -54,7 +54,7 @@
 
 ## 目录 JSON
 
-`AngieFilter/Resources/Looks.json` 是数组，顺序就是滤镜条的顺序。原图必须是第一项，`id` 为 `original`。`LookLibrary` 在文件缺失、解码失败或数组为空时只返回内置原图。
+`AngieFilter/Resources/Looks.json` 是数组。原图必须存在，`id` 为 `original`。界面不按这份数组平铺，而按 `LookLibrary` 里的分类显示。`LookLibrary` 在文件缺失、解码失败或数组为空时只返回内置原图。
 
 每条字段：
 

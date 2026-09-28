@@ -7,9 +7,11 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var status = CameraStatus()
     @Published var aspectRatio: AspectRatio = .fourThree
     @Published var lookID = Look.originalID
-    @Published var intensity: Float = 1
-    @Published var intensityOpen = false
+    @Published var adjustOpen = false
+    @Published var draft = LookAdjustment()
+    @Published var adjustmentNotice: String?
     @Published var filtersOpen = false
+    @Published var familyID = "original"
     @Published var reviewImage: UIImage?
     @Published var isSaving = false
     @Published var focusPoint: CGPoint?
@@ -20,6 +22,7 @@ final class CameraViewModel: ObservableObject {
     let looks = LookLibrary.looks
     let session = CameraSessionController()
 
+    private var savedAdjustments: [Look.ID: LookAdjustment] = [:]
     private var thumbnailWork: DispatchWorkItem?
     private var refreshTimer: Timer?
     private var focusClear: Task<Void, Never>?
@@ -46,6 +49,10 @@ final class CameraViewModel: ObservableObject {
         LookLibrary.look(id: lookID)
     }
 
+    var visibleLooks: [Look] {
+        LookLibrary.family(id: familyID)?.looks ?? [LookLibrary.original]
+    }
+
     func cycleAspect() {
         aspectRatio = aspectRatio.next()
         syncParameters()
@@ -61,27 +68,72 @@ final class CameraViewModel: ObservableObject {
         session.setFacing(next)
     }
 
+    func selectFamily(_ id: String) {
+        guard familyID != id else { return }
+        familyID = id
+        adjustOpen = false
+        refreshThumbnails()
+        syncParameters()
+    }
+
     func select(_ look: Look) {
         if lookID == look.id, !look.isOriginal {
-            intensityOpen.toggle()
+            toggleAdjust()
+            return
+        }
+        lookID = look.id
+        familyID = LookLibrary.family(containing: look.id).id
+        adjustOpen = false
+        adjustmentNotice = nil
+        syncParameters()
+    }
+
+    func toggleAdjust() {
+        guard !selectedLook.isOriginal else { return }
+        if adjustOpen {
+            adjustOpen = false
         } else {
-            lookID = look.id
-            intensityOpen = false
-            if !look.isOriginal {
-                intensity = 1
-            }
+            draft = savedAdjustments[lookID] ?? .baseline(for: selectedLook)
+            adjustmentNotice = nil
+            adjustOpen = true
         }
         syncParameters()
     }
 
-    func setIntensity(_ value: Float) {
-        intensity = value
+    func updateDraft(_ body: (inout LookAdjustment) -> Void) {
+        body(&draft)
+        adjustmentNotice = nil
         syncParameters()
+    }
+
+    func resetDraft() {
+        draft = .baseline(for: selectedLook)
+        adjustmentNotice = nil
+        syncParameters()
+    }
+
+    func saveAdjustment() {
+        guard !selectedLook.isOriginal else { return }
+        let baseline = LookAdjustment.baseline(for: selectedLook)
+        if draft == baseline {
+            savedAdjustments.removeValue(forKey: lookID)
+        } else {
+            savedAdjustments[lookID] = draft
+        }
+        adjustmentNotice = "已保存"
+        syncParameters()
+        Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if adjustmentNotice == "已保存" {
+                adjustmentNotice = nil
+            }
+        }
     }
 
     func toggleFilters() {
         filtersOpen.toggle()
         if filtersOpen {
+            familyID = LookLibrary.family(containing: lookID).id
             refreshThumbnails()
             refreshTimer?.invalidate()
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
@@ -96,7 +148,7 @@ final class CameraViewModel: ObservableObject {
 
     func closeFilters() {
         filtersOpen = false
-        intensityOpen = false
+        adjustOpen = false
         refreshTimer?.invalidate()
         refreshTimer = nil
     }
@@ -178,21 +230,29 @@ final class CameraViewModel: ObservableObject {
         UIApplication.shared.open(url)
     }
 
+    private func renderedAdjustment(for look: Look) -> LookAdjustment {
+        guard !look.isOriginal else { return LookAdjustment() }
+        if adjustOpen, look.id == lookID {
+            return draft
+        }
+        return savedAdjustments[look.id] ?? .baseline(for: look)
+    }
+
     private func syncParameters() {
         let aspect = aspectRatio
-        let look = lookID
-        let amount = look == Look.originalID ? Float(1) : intensity
+        let look = selectedLook
+        let adjustment = renderedAdjustment(for: look)
         session.updateRenderParameters { parameters in
             parameters.aspectRatio = aspect
-            parameters.lookID = look
-            parameters.intensity = amount
+            parameters.lookID = look.id
+            parameters.adjustment = adjustment
         }
     }
 
     private func refreshThumbnails() {
         guard filtersOpen, let source = session.currentThumbnailSource() else { return }
         thumbnailWork?.cancel()
-        let looks = self.looks
+        let looks = visibleLooks
         let work = DispatchWorkItem {
             let context = CIContext(options: [
                 .cacheIntermediates: false,
@@ -200,13 +260,23 @@ final class CameraViewModel: ObservableObject {
             ])
             var images: [Look.ID: UIImage] = [:]
             for look in looks {
-                let graded = GradeApplicator.apply(source, look: look, intensity: 1, quality: .preview)
+                let graded = GradeApplicator.apply(
+                    source,
+                    look: look,
+                    adjustment: .baseline(for: look),
+                    quality: .preview
+                )
                 let extent = graded.extent.integral
                 guard extent.width > 1, let cgImage = context.createCGImage(graded, from: extent) else { continue }
                 images[look.id] = UIImage(cgImage: cgImage)
             }
             DispatchQueue.main.async { [weak self] in
-                self?.thumbnails = images
+                guard let self else { return }
+                var merged = self.thumbnails
+                for (id, image) in images {
+                    merged[id] = image
+                }
+                self.thumbnails = merged
             }
         }
         thumbnailWork = work

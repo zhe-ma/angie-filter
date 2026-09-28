@@ -3,8 +3,18 @@ import Foundation
 enum LookLibrary {
     static let looks: [Look] = load()
 
+    static let families: [LookFamily] = makeFamilies()
+
     static func look(id: Look.ID) -> Look {
         looks.first { $0.id == id } ?? original
+    }
+
+    static func family(containing lookID: Look.ID) -> LookFamily {
+        families.first { family in family.looks.contains { $0.id == lookID } } ?? families[0]
+    }
+
+    static func family(id: String) -> LookFamily? {
+        families.first { $0.id == id }
     }
 
     static let original = Look(
@@ -39,6 +49,43 @@ enum LookLibrary {
             if url.lastPathComponent == name { return url }
         }
         return nil
+    }
+
+    private static let familySpecs: [(id: String, name: String, ids: [String])] = [
+        ("original", "原图", [Look.originalID]),
+        ("leica", "徕卡", ["natural", "classic", "bright", "mono"]),
+        ("fuji", "富士", ["standard", "vivid", "soft", "chrome", "neg", "nostalgia", "real", "cinema", "bleach", "portrait", "portrait-hi", "acros", "pro400h", "superia"]),
+        ("kodak", "柯达", ["portra160", "portra400", "portra800", "gold", "ektar", "ultramax", "colorplus", "kodachrome", "ektachrome", "trix", "tmax"]),
+        ("cinema", "电影", ["cs800t", "cs50d", "cs400d", "v250d", "v500t"]),
+        ("ricoh", "理光", ["positive", "negative", "hibw"]),
+        ("hasselblad", "哈苏", ["hncs"]),
+        ("ilford", "依尔福", ["hp5", "delta", "fp4", "xp2"]),
+        ("polaroid", "宝丽来", ["sx70", "p600"]),
+        ("digital", "数码", ["canon", "nikon", "sony"])
+    ]
+
+    private static func makeFamilies() -> [LookFamily] {
+        let byID = Dictionary(uniqueKeysWithValues: looks.map { ($0.id, $0) })
+        var used = Set<String>()
+        var result: [LookFamily] = []
+        for spec in familySpecs {
+            let members = spec.ids.compactMap { id -> Look? in
+                guard let look = byID[id] else { return nil }
+                used.insert(id)
+                return look
+            }
+            if !members.isEmpty {
+                result.append(LookFamily(id: spec.id, name: spec.name, looks: members))
+            }
+        }
+        let rest = looks.filter { !used.contains($0.id) }
+        if !rest.isEmpty {
+            result.append(LookFamily(id: "other", name: "其他", looks: rest))
+        }
+        if result.isEmpty {
+            return [LookFamily(id: "original", name: "原图", looks: [original])]
+        }
+        return result
     }
 }
 

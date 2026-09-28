@@ -16,7 +16,7 @@ enum FrameImageMaker {
         return GradeApplicator.apply(
             source,
             look: look,
-            intensity: parameters.intensity,
+            adjustment: parameters.adjustment,
             quality: parameters.quality
         )
     }

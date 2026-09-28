@@ -114,25 +114,33 @@ struct CameraView: View {
 
     private var filterPanel: some View {
         VStack(spacing: 8) {
-            Text(model.selectedLook.name)
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.86))
-            if model.intensityOpen, !model.selectedLook.isOriginal {
-                HStack(spacing: 10) {
-                    Text("强度")
-                    Slider(value: Binding(
-                        get: { Double(model.intensity) },
-                        set: { model.setIntensity(Float($0)) }
-                    ), in: 0...1)
-                    Text("\(Int(model.intensity * 100))")
-                        .frame(width: 32, alignment: .trailing)
+            HStack {
+                Text(model.selectedLook.name)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.86))
+                if let notice = model.adjustmentNotice {
+                    Text(notice)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(.horizontal, 28)
+                Spacer()
+                if !model.selectedLook.isOriginal {
+                    Button(model.adjustOpen ? "收起" : "调节", action: model.toggleAdjust)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(Color.white, in: Capsule())
+                }
             }
+            .padding(.horizontal, 16)
+            if model.adjustOpen, !model.selectedLook.isOriginal {
+                adjustmentControls
+            }
+            familyRow
             FilterStripView(
-                looks: model.looks,
+                looks: model.visibleLooks,
+                familyID: model.familyID,
                 selectedID: model.lookID,
                 thumbnails: model.thumbnails,
                 onSelect: model.select
@@ -140,6 +148,91 @@ struct CameraView: View {
             .frame(height: 84)
         }
         .padding(.bottom, 4)
+    }
+
+    private var adjustmentControls: some View {
+        VStack(spacing: 6) {
+            adjustmentRow("强度", value: model.draft.intensity, span: 1) { value in
+                model.updateDraft { $0.intensity = value }
+            }
+            adjustmentRow("清晰度", value: model.draft.clarity, span: 1) { value in
+                model.updateDraft { $0.clarity = value }
+            }
+            adjustmentRow("颗粒", value: model.draft.grain, span: 1) { value in
+                model.updateDraft { $0.grain = value }
+            }
+            adjustmentRow("暗角", value: model.draft.vignette, span: 1.5) { value in
+                model.updateDraft { $0.vignette = value }
+            }
+            HStack(spacing: 12) {
+                Button("恢复默认", action: model.resetDraft)
+                    .foregroundStyle(.white.opacity(0.8))
+                Spacer()
+                Button("保存", action: model.saveAdjustment)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .frame(height: 28)
+                    .background(Color.white, in: Capsule())
+            }
+            .font(.system(size: 13))
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func adjustmentRow(
+        _ title: String,
+        value: Float,
+        span: Float,
+        set: @escaping (Float) -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .frame(width: 42, alignment: .leading)
+            Slider(
+                value: Binding(
+                    get: { Double(value / span) },
+                    set: { set(Float($0) * span) }
+                ),
+                in: 0...1
+            )
+            Text("\(Int((value / span * 100).rounded()))")
+                .frame(width: 28, alignment: .trailing)
+                .monospacedDigit()
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.white.opacity(0.7))
+    }
+
+    private var familyRow: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(LookLibrary.families) { family in
+                        let active = family.id == model.familyID
+                        Button(family.name) {
+                            model.selectFamily(family.id)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 13, weight: active ? .semibold : .regular))
+                        .foregroundStyle(active ? Color.black : Color.white.opacity(0.75))
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(active ? Color.white : Color.white.opacity(0.1), in: Capsule())
+                        .id(family.id)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .onAppear {
+                proxy.scrollTo(model.familyID, anchor: .center)
+            }
+            .onChange(of: model.familyID) { _, id in
+                withAnimation {
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
+        }
     }
 
     private var shutterBar: some View {
