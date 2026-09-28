@@ -2,7 +2,7 @@
 
 取景时就把相框套在预览上。确认页看到的那张，就是保存进最近项目的那张。
 
-相框留在颜色处理之后，不进入立方体，也不进入 LUT。界面上的名字是留白、暗房、相纸、窗线、角标、压底、拍立得、印记。窗线、角标、压底盖在照片上，其余往外扩。
+相框留在颜色处理之后，不进入 LUT，也不参与收尾。界面上的名字是留白、暗房、相纸、窗线、角标、压底、拍立得、印记。窗线、角标、压底盖在照片上，其余往外扩。
 
 ## 结论
 
@@ -119,7 +119,7 @@ flowchart TB
 ```mermaid
 flowchart TB
   src[预览帧或照片] --> geo["FrameImageMaker<br/>转正、镜像、画幅裁切"]
-  geo --> grade["GradeApplicator<br/>立方体或 LUT，再按强度溶解"]
+  geo --> grade["GradeApplicator<br/>颜色、收尾，再按强度溶解"]
   grade --> frame{FrameStyle}
   frame -->|off| out[预览 / 确认页 UIImage / 保存]
   frame -->|留白、暗房、相纸、拍立得、印记| canvas["FrameCompositor<br/>外扩画布"]

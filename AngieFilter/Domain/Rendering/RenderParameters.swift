@@ -5,30 +5,18 @@ struct LookAdjustment: Equatable, Sendable {
     var intensity: Float = 1
     var fade: Float = 0
     var halation: Float = 0
-    var clarity: Float = 0
     var grain: Float = 0
     var vignette: Float = 0
 
     static func baseline(for look: Look) -> LookAdjustment {
-        switch look.grade {
-        case .none:
-            return LookAdjustment()
-        case .colorCube(let grade):
-            return LookAdjustment(
-                intensity: 1,
-                fade: look.finish.fade,
-                halation: look.finish.halation,
-                clarity: grade.clarity,
-                grain: grade.grain,
-                vignette: grade.vignette
-            )
-        case .lutImage(let grade):
-            return LookAdjustment(
-                intensity: grade.strength,
-                fade: look.finish.fade,
-                halation: look.finish.halation
-            )
-        }
+        guard !look.isOriginal else { return LookAdjustment() }
+        return LookAdjustment(
+            intensity: look.strength,
+            fade: look.finish.fade,
+            halation: look.finish.halation,
+            grain: look.finish.grain,
+            vignette: look.finish.vignette
+        )
     }
 }
 
@@ -53,4 +41,6 @@ struct RenderParameters: Equatable, Sendable {
 enum RenderQuality: Equatable, Sendable {
     case preview
     case still
+    /// Filter strip. Color, fade, and vignette only; grain and halation are too small to see.
+    case thumbnail
 }

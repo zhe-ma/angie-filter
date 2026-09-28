@@ -1,0 +1,17 @@
+film-*.png in this folder are adapted from the RawTherapee Film Simulation Collection,
+version 2015-09-20.
+
+Credits: Pat David, Pavlov Dmitry, Michael Ezra.
+Source: https://rawpedia.rawtherapee.com/Film_Simulation
+Mirror used: https://github.com/cedeber/hald-clut
+
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes: each level-12 Hald CLUT was trilinearly resampled to a 64³ lattice and re-encoded as a
+512×512 PNG of 8×8 tiles (blue 0 top-left, red across, green down) by Tools/ImportFilmLUTs.swift.
+These adapted files are released under the same CC BY-SA 4.0 license.
+
+Disclaimer from the collection: the trademarked names which may appear in the filenames are there
+for informational purposes only, to say which film stock the look approximates. Neither the
+publisher nor the authors are affiliated with or endorsed by the companies that own the trademarks.

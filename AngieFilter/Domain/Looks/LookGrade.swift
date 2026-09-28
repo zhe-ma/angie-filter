@@ -1,28 +1,20 @@
 import Foundation
 
-/// Which renderer a look uses. A new scheme is a new case plus a grader in CameraPipeline.
+/// Where a look's color comes from. Everything after the color step is shared, see `LookFinish`.
 enum LookGrade: Equatable, Sendable {
     case none
-    case colorCube(ColorCubeGrade)
-    case lutImage(LUTImageGrade)
-
-    var colorCube: ColorCubeGrade? {
-        if case .colorCube(let grade) = self { return grade }
-        return nil
-    }
+    /// 512×512 sRGB PNG, 8×8 tiles of 64×64, sampled as a 64³ cube.
+    case lut(LUTGrade)
+    /// A Core Image filter that takes only an input image, such as `CIPhotoEffectChrome`.
+    case builtIn(BuiltInGrade)
 }
 
-/// Baked 65³ recipe. Clarity, grain, and vignette stay outside the cube.
-struct ColorCubeGrade: Equatable, Sendable {
-    var cubeName: String
-    var clarity: Float
-    var grain: Float
-    var grainPlate: GrainPlateKind
-    var vignette: Float
-}
-
-/// 512×512 PNG, 8×8 tiles of 64×64. `strength` is the catalog mix, from 0 to 1.
-struct LUTImageGrade: Equatable, Sendable {
+struct LUTGrade: Equatable, Sendable {
     var imageName: String
+    /// Catalog mix toward the original, from 0 to 1.
     var strength: Float
+}
+
+struct BuiltInGrade: Equatable, Sendable {
+    var filterName: String
 }

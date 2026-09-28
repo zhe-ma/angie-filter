@@ -19,13 +19,11 @@ struct Look: Identifiable, Equatable, Sendable {
 
     var isOriginal: Bool { id == Self.originalID }
 
-    var clarity: Float { grade.colorCube?.clarity ?? 0 }
-    var grain: Float { grade.colorCube?.grain ?? 0 }
-    var grainPlate: GrainPlateKind { grade.colorCube?.grainPlate ?? .none }
-    var vignette: Float { grade.colorCube?.vignette ?? 0 }
-
-    /// Recipe looks expose clarity, grain, and vignette.
-    var adjustsSpatially: Bool { grade.colorCube != nil }
+    /// First mix toward the original when this look is picked.
+    var strength: Float {
+        if case .lut(let grade) = grade { return grade.strength }
+        return 1
+    }
 
     /// Halation stays hidden unless this look ships with it.
     var showsHalation: Bool { finish.halation > 0.001 }

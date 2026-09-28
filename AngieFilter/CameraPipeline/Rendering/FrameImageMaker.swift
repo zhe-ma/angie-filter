@@ -2,13 +2,16 @@ import CoreImage
 import CoreVideo
 
 enum FrameImageMaker {
+    /// Live preview works on a shorter edge so the color steps stay at display size.
+    static let previewMaxLongEdge: CGFloat = 1920
+
     static func sourceImage(from pixelBuffer: CVPixelBuffer, parameters: RenderParameters) -> CIImage {
         let oriented = CIImage(cvPixelBuffer: pixelBuffer).oriented(parameters.orientation)
-        return geometry(oriented, parameters: parameters)
+        return prepared(geometry(oriented, parameters: parameters), quality: parameters.quality)
     }
 
     static func sourceImage(from photoImage: CIImage, parameters: RenderParameters) -> CIImage {
-        geometry(photoImage, parameters: parameters)
+        prepared(geometry(photoImage, parameters: parameters), quality: parameters.quality)
     }
 
     static func graded(_ source: CIImage, parameters: RenderParameters) -> CIImage {
@@ -38,6 +41,14 @@ enum FrameImageMaker {
         return upright
     }
 
+    static func scaledForPreview(_ image: CIImage) -> CIImage {
+        let extent = image.extent
+        let longEdge = max(extent.width, extent.height)
+        guard longEdge > previewMaxLongEdge, longEdge > 1 else { return image }
+        let scale = previewMaxLongEdge / longEdge
+        return shiftedToOrigin(image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)))
+    }
+
     static func thumbnailSource(from image: CIImage, width: CGFloat = 160) -> CIImage {
         let extent = shiftedToOrigin(image).extent
         guard extent.width > 1 else { return image }
@@ -52,6 +63,11 @@ enum FrameImageMaker {
         }
         let crop = AspectCrop.pixelRect(for: parameters.aspectRatio, imageExtent: upright.extent)
         return upright.cropped(to: crop)
+    }
+
+    private static func prepared(_ image: CIImage, quality: RenderQuality) -> CIImage {
+        guard quality == .preview else { return image }
+        return scaledForPreview(image)
     }
 
     private static func mirror(_ image: CIImage) -> CIImage {

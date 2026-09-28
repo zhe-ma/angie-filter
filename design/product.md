@@ -22,78 +22,126 @@
 
 这一阶段只做照片。
 
-- 视频、Live Photo、RAW、手动 ISO / 快门
+- 视频、Live Photo（以后可能做，采集层的路线在 [capture.md](capture.md)）
+- RAW、手动 ISO / 快门
 - 美颜、人脸重塑、贴纸、AR
 - 从相册导入再编辑、滤镜商店、账号
 - 美图 / Faceu 式美颜、食物模板、Instagram 式趣味预设
 
 ## 质量底线
 
-对标徕卡色彩和富士胶片模拟，以及 Dehancer、Cobalt、RNI、Mastin、VSCO 实际在卖的那些胶片和机身色彩。
+对标 Dehancer、VSCO、RNI 这类胶片模拟的观感：影调、色相、肤色、高光滚落和颗粒像胶片，而不是整体调个色温。
 
-iPhone 出图已经是处理过的 Display P3 / sRGB，这一阶段在这张成片上重现影调、色相、肤色、高光滚落、颗粒和微对比。复制不了另一颗传感器的光谱响应。配方在本仓库里写，用色卡和实拍验收。不从相机固件抽取 LUT。
+颜色不在仓库里手调。胶片款用开源的 RawTherapee Film Simulation Collection（CC BY-SA 4.0），系统款用 Core Image 自带的照片效果，另有仓库已有的 25 张 LUT。iPhone 出图已经是处理过的 Display P3，在这张成片上套 LUT，复制不了另一颗传感器或真实胶片的光谱响应。不从相机固件抽取 LUT，不打包许可不允许再分发的 LUT。
 
 ## 滤镜目录
 
-界面文案是「滤镜」。代码类型是 `Look`。一条横滑，原图在第一项。徕卡、富士、柯达、电影、理光、哈苏、依尔福、宝丽来、数码机身，以及 LUT 的人像、风景、美食、新锐，是同一层分类。
+界面文案是「滤镜」。代码类型是 `Look`。一条横滑，原图在第一项。柯达、富士、拍立得、黑白、爱克发、电影感、系统，以及 LUT 的人像、风景、美食、新锐，是同一层分类。
 
-可点击目录在 [interaction.html](interaction.html)。脚本里按家族分组。配方滤镜的 id 同时是 `Look.id` 和 `ColorCubes/<id>.acube` 的文件名。LUT 滤镜的 id 以 `lut-` 开头，图在 `LUTs/<lutImage>.png`。
+胶片款的图在 `FilmLUTs/film-<id>.png`，由 `Tools/ImportFilmLUTs.swift` 从 HaldCLUT 转换，名称、默认强度、颗粒和暗角也写在这个脚本里。人像、风景、美食、新锐的 id 以 `lut-` 开头，图在 `LUTs/<lut>.png`。系统款没有图，直接调用 Core Image 滤镜。
 
-每一款非原图都是正式内置资源。下面五款是视觉验收组：自然、经典铬黄、肖像 400、800T、黑白（`acros`）。
+视觉验收组：波特拉 400、Pro 400H、Velvia 50、Tri-X 400、宝丽来 669、大片。
 
-| id | 名称 | 家族 | 验收 |
+| id | 名称 | 家族 | 来源 |
 | --- | --- | --- | --- |
-| `original` | 原图 | — | |
-| `natural` | 自然 | 徕卡 | 验收 |
-| `classic` | 经典 | 徕卡 | |
-| `bright` | 鲜明 | 徕卡 | |
-| `mono` | 单色 | 徕卡 | |
-| `standard` | 标准 | 富士 | |
-| `vivid` | 鲜艳 | 富士 | |
-| `soft` | 柔和 | 富士 | |
-| `chrome` | 经典铬黄 | 富士 | 验收 |
-| `neg` | 经典负片 | 富士 | |
-| `nostalgia` | 怀旧负片 | 富士 | |
-| `real` | 真实 | 富士 | |
-| `cinema` | 电影 | 富士 | |
-| `bleach` | 漂白 | 富士 | |
-| `portrait` | 人像 | 富士 | |
-| `portrait-hi` | 人像高 | 富士 | |
-| `acros` | 黑白 | 富士 | 验收。Acros。Tri-X 在目录里叫「黑白 400」（`trix`） |
-| `pro400h` | 400H | 富士 | |
-| `superia` | 超级丽爱 | 富士 | |
-| `portra160` | 肖像 160 | 柯达 | |
-| `portra400` | 肖像 400 | 柯达 | 验收 |
-| `portra800` | 肖像 800 | 柯达 | |
-| `gold` | 金 200 | 柯达 | |
-| `ektar` | 爱克塔 | 柯达 | |
-| `ultramax` | 日常 400 | 柯达 | |
-| `colorplus` | 彩色+ | 柯达 | |
-| `kodachrome` | 柯达克罗姆 | 柯达 | |
-| `ektachrome` | 爱克塔克罗姆 | 柯达 | |
-| `trix` | 黑白 400 | 柯达 | |
-| `tmax` | 黑白细 | 柯达 | T-Max |
-| `cs800t` | 800T | 电影 | 验收 |
-| `cs50d` | 50D | 电影 | |
-| `cs400d` | 400D | 电影 | |
-| `v250d` | 日光 250 | 电影 | |
-| `v500t` | 灯光 500 | 电影 | |
-| `trailer` | 大片 | 电影 | 宣传片配色。阴影偏青，肤色和灯光偏暖 |
-| `positive` | 正片 | 理光 | |
-| `negative` | 负片 | 理光 | |
-| `hibw` | 高对比黑白 | 理光 | |
-| `hncs` | 自然色 | 哈苏 | |
-| `hp5` | HP5 | 依尔福 | |
-| `delta` | 德尔塔 | 依尔福 | |
-| `fp4` | FP4 | 依尔福 | |
-| `xp2` | XP2 | 依尔福 | |
-| `sx70` | SX-70 | 宝丽来 | |
-| `p600` | 600 | 宝丽来 | |
-| `canon` | 佳能 | 数码 | |
-| `nikon` | 尼康 | 数码 | |
-| `sony` | 索尼 | 数码 | |
+| `original` | 原图 | 原图 | — |
+| `portra160` | 波特拉 160 | 柯达 | Kodak Portra 160 2 |
+| `portra400` | 波特拉 400 | 柯达 | Kodak Portra 400 2 |
+| `portra400vc` | 波特拉 VC | 柯达 | Kodak Portra 400 VC 2 |
+| `portra800` | 波特拉 800 | 柯达 | Kodak Portra 800 2 |
+| `ektar100` | 艾克塔 100 | 柯达 | Kodak Ektar 100 |
+| `elite200` | 精英 200 | 柯达 | Kodak Elite Color 200 |
+| `elite400` | 精英 400 | 柯达 | Kodak Elite Color 400 |
+| `kodachrome64` | 柯达克罗姆 | 柯达 | Kodak Kodachrome 64 |
+| `ektachrome100vs` | 爱克塔克罗姆 | 柯达 | Kodak Ektachrome 100 VS |
+| `elitechrome200` | 精英反转 | 柯达 | Kodak Elite Chrome 200 |
+| `trix400` | Tri-X 400 | 柯达 | Kodak TRI-X 400 2 |
+| `tmax100` | T-Max 100 | 柯达 | Kodak T-Max 100 |
+| `bw400cn` | BW400CN | 柯达 | Kodak BW 400 CN |
+| `pro400h` | Pro 400H | 富士 | Fuji 400H 2 |
+| `pro160c` | Pro 160C | 富士 | Fuji 160C 2 |
+| `pro800z` | Pro 800Z | 富士 | Fuji 800Z 2 |
+| `superia200` | Superia 200 | 富士 | Fuji Superia 200 |
+| `superia400` | Superia 400 | 富士 | Fuji Superia 400 2 |
+| `superia800` | Superia 800 | 富士 | Fuji Superia X-Tra 800 |
+| `reala100` | Reala 100 | 富士 | Fuji Superia Reala 100 |
+| `velvia50` | Velvia 50 | 富士 | Fuji Velvia 50 |
+| `provia100f` | Provia 100F | 富士 | Fuji Provia 100F |
+| `astia100f` | Astia 100F | 富士 | Fuji Astia 100F |
+| `acros100` | Acros 100 | 富士 | Fuji Neopan Acros 100 |
+| `neopan1600` | Neopan 1600 | 富士 | Fuji Neopan 1600 2 |
+| `fp100c` | FP-100C | 拍立得 | Fuji FP-100c 3 |
+| `polaroid669` | 宝丽来 669 | 拍立得 | Polaroid 669 3 |
+| `polaroid669cold` | 669 冷调 | 拍立得 | Polaroid 669 Cold 3 |
+| `polaroid690` | 宝丽来 690 | 拍立得 | Polaroid 690 3 |
+| `px70` | PX-70 | 拍立得 | Polaroid PX-70 3 |
+| `px680` | PX-680 | 拍立得 | Polaroid PX-680 3 |
+| `px100warm` | PX-100 暖 | 拍立得 | Polaroid PX-100UV+ Warm 3 |
+| `timezero` | 过期相纸 | 拍立得 | Polaroid Time Zero (Expired) 4 |
+| `polachrome` | Polachrome | 拍立得 | Polaroid Polachrome |
+| `polaroid665` | 宝丽来 665 | 拍立得 | Polaroid 665 3 |
+| `hp5` | HP5 400 | 黑白 | Ilford HP5 Plus 400 |
+| `delta100` | Delta 100 | 黑白 | Ilford Delta 100 |
+| `delta3200` | Delta 3200 | 黑白 | Ilford Delta 3200 2 |
+| `fp4` | FP4 125 | 黑白 | Ilford FP4 Plus 125 |
+| `panf50` | Pan F 50 | 黑白 | Ilford Pan F Plus 50 |
+| `xp2` | XP2 | 黑白 | Ilford XP2 |
+| `apx100` | APX 100 | 黑白 | Agfa APX 100 |
+| `retro100` | Retro 100 | 黑白 | Rollei Retro 100 Tonal |
+| `ortho25` | Ortho 25 | 黑白 | Rollei Ortho 25 |
+| `infrared` | 红外 | 黑白 | Kodak HIE (HS Infra) |
+| `vista200` | Vista 200 | 爱克发 | Agfa Vista 200 |
+| `precisa100` | Precisa 100 | 爱克发 | Agfa Precisa 100 |
+| `ultra100` | Ultra 100 | 爱克发 | Agfa Ultra Color 100 |
+| `xproslide` | 交叉冲洗 | 爱克发 | Lomography X-Pro Slide 200 |
+| `redscale` | 红阶 | 爱克发 | Lomography Redscale 100 |
+| `elitexpro` | 精英交叉 | 爱克发 | Kodak Elite 100 XPRO |
+| `tealorange` | 大片 | 电影感 | TealOrange |
+| `bleachbypass` | 跳漂白 | 电影感 | BleachBypass1 |
+| `crispwarm` | 暖阳 | 电影感 | CrispWarm |
+| `crispwinter` | 冬日 | 电影感 | CrispWinter |
+| `softwarming` | 柔暖 | 电影感 | SoftWarming |
+| `latesunset` | 日落 | 电影感 | LateSunset |
+| `fallcolors` | 秋色 | 电影感 | FallColors |
+| `moonlight` | 月光 | 电影感 | Moonlight |
+| `foggynight` | 雾夜 | 电影感 | FoggyNight |
+| `candlelight` | 烛光 | 电影感 | CandleLight |
+| `tealmagentagold` | 霓虹 | 电影感 | TealMagentaGold |
+| `sys-chrome` | 铬黄 | 系统 | `CIPhotoEffectChrome` |
+| `sys-fade` | 褪色 | 系统 | `CIPhotoEffectFade` |
+| `sys-instant` | 怀旧 | 系统 | `CIPhotoEffectInstant` |
+| `sys-process` | 冲印 | 系统 | `CIPhotoEffectProcess` |
+| `sys-transfer` | 岁月 | 系统 | `CIPhotoEffectTransfer` |
+| `sys-mono` | 单色 | 系统 | `CIPhotoEffectMono` |
+| `sys-tonal` | 色调 | 系统 | `CIPhotoEffectTonal` |
+| `sys-noir` | 黑白 | 系统 | `CIPhotoEffectNoir` |
+| `lut-ziran` | 自然 | 人像 | `LUTs/ziran.png` |
+| `lut-qingtou` | 清透 | 人像 | `LUTs/qingtou.png` |
+| `lut-wenrou` | 温柔 | 人像 | `LUTs/wenrou.png` |
+| `lut-baixi` | 白皙 | 人像 | `LUTs/baixi.png` |
+| `lut-fennen` | 粉嫩 | 人像 | `LUTs/fennen.png` |
+| `lut-candyb` | 糖果 | 人像 | `LUTs/candyb.png` |
+| `lut-dannai` | 淡奶 | 人像 | `LUTs/dannai.png` |
+| `lut-musi` | 慕斯 | 人像 | `LUTs/musi.png` |
+| `lut-zhuguang` | 珠光 | 人像 | `LUTs/zhuguang.png` |
+| `lut-huoli` | 活力 | 人像 | `LUTs/huoli.png` |
+| `lut-qingchun` | 青春 | 人像 | `LUTs/qingchun.png` |
+| `lut-xuanlan` | 绚烂 | 风景 | `LUTs/xuanlan.png` |
+| `lut-chengjing` | 澄净 | 风景 | `LUTs/chengjing.png` |
+| `lut-dushi` | 都市 | 风景 | `LUTs/dushi.png` |
+| `lut-jiaoye` | 郊野 | 风景 | `LUTs/jiaoye.png` |
+| `lut-meiwei` | 美味 | 美食 | `LUTs/meiwei.png` |
+| `lut-xinxian` | 新鲜 | 美食 | `LUTs/xinxian.png` |
+| `lut-youge` | 优格 | 美食 | `LUTs/youge.png` |
+| `lut-lengcui` | 冷萃 | 美食 | `LUTs/lengcui.png` |
+| `lut-yishigan` | 仪式感 | 新锐 | `LUTs/yishigan.png` |
+| `lut-qingjiaopian` | 轻胶片 | 新锐 | `LUTs/qingjiaopian.png` |
+| `lut-fugu` | 复古 | 新锐 | `LUTs/fugu.png` |
+| `lut-luoma` | 罗马 | 新锐 | `LUTs/luoma.png` |
+| `lut-dianying` | 电影 | 新锐 | `LUTs/dianying.png` |
+| `lut-huidiao` | 灰调 | 新锐 | `LUTs/huidiao.png` |
 
-Acros 的黄、红、绿滤镜不单列。强度、颗粒板和清晰度见 [rendering.md](rendering.md)。
+来源一栏是 HaldCLUT 的文件名或 Core Image 滤镜名。强度、颗粒、暗角和光晕的默认值见 `Looks.json`，做法见 [rendering.md](rendering.md)。
 
 ## 交互
 
@@ -117,9 +165,9 @@ flowchart TB
 - 点「双摄」进入前后同时取景，再点一次回到进入前的单摄镜头和滤镜。双摄里两套滤镜留在这次打开的内存里。排列在快门上方：上下、左右、画中画、圆窗、叠加。上下和左右可以交换谁在上或在左。画中画和圆窗的小窗可以在画面里拖，换角吸回四角，交换对调谁是大图。叠加有透明度（0.2 到 0.8）和换层。点中哪一路，滤镜和变焦只改这一路。滤镜标题旁可以点「后置」「前置」。双摄时翻转改成交换两路位置，不退出双摄。细节在 [multicam.md](multicam.md)
 - 面板默认收起，取景尽量占满。快门左侧是「相框」，右侧是「滤镜」。两个面板互斥，一次只展开一个。附加控制收在按钮后面，需要时才展开，取景保持大
 - 点「相框」后可以选：关闭、留白、暗房、相纸、窗线、角标、压底、拍立得、印记。留白、暗房、相纸、拍立得、印记往外扩。窗线、角标、压底盖在照片上，不改变成片比例。角标、压底、拍立得、印记可以开关型号、地点和日期，并写一行最多 12 个字的短句。地点默认关。改动立刻出现在取景上。点相框边只收起面板；点照片内容会收起面板并对焦
-- 点「滤镜」后，快门上方展开两排。上面是分类：原图、徕卡、富士、柯达、电影、理光、哈苏、依尔福、宝丽来、数码、人像、风景、美食、新锐。下面只显示当前分类的缩略图。点分类不改已经套上的风格。再点按钮，或点画面，面板收起。点画面收起时仍会对焦
-- 缩略图是当前画面。选中为 2pt 白环。非原图风格可以点「调节」，或再点一次已选缩略图，改强度和褪色。配方还可以改清晰度、颗粒和暗角。光晕只出现在 800T、灯光 500、大片，以及新锐里的「电影」。拖动时预览跟着变。点「保存」后记在这次打开的内存里，换到别的风格再回来仍然是改过的数值。不点保存就收起，回到上次保存的数值。原图没有调节
-- 第一次套上某款时，强度和褪色用这款自己的默认。配方默认强度是 100。LUT 默认强度写在目录里，例如 80
+- 点「滤镜」后，快门上方展开两排。上面是分类：原图、柯达、富士、拍立得、黑白、爱克发、电影感、系统、人像、风景、美食、新锐。下面只显示当前分类的缩略图。点分类不改已经套上的风格。再点按钮，或点画面，面板收起。点画面收起时仍会对焦
+- 缩略图是当前画面。选中为 2pt 白环。非原图风格可以点「调节」，或再点一次已选缩略图，改强度、褪色、颗粒和暗角。光晕只出现在大片、雾夜、烛光，以及新锐里的「电影」。拖动时预览跟着变。点「保存」后记在这次打开的内存里，换到别的风格再回来仍然是改过的数值。不点保存就收起，回到上次保存的数值。原图没有调节
+- 第一次套上某款时，强度、褪色、颗粒和暗角用这款自己的默认。多数胶片款强度是 100，反差大的几款是 60 到 85，写在目录里
 - 快门是白环。按下进入确认页。确认页持有的就是刚才取景里那张已经裁切、已经套好风格、并且带上当前相框的图。确认页仍只有重拍和保存
 
 权限被拒时说明用途，并提供前往系统设置。保存只用「仅添加」相册权限。相机用途文案：`AngieFilter 需要使用相机取景和拍摄。` 相册用途文案：`AngieFilter 会把拍好的照片保存到相册。`
@@ -128,10 +176,11 @@ flowchart TB
 
 固定场景：肤色、蓝天、绿植、红衣服、白衣服高光、夜景灯光。
 
-- 自然：肤色不能偏橙
-- 经典铬黄：更闷，暗部更硬
-- 鲜艳：绿和红分开
-- 黑白（`acros`）：阴影留得住细节，颗粒随画面大小变化
-- 大片（`trailer`）：肤色暖，暗部和蓝天偏青，红衣服仍是红的。和电影、800T 并排看。参数在 [poster.md](poster.md)
+- 波特拉 400：肤色暖而干净，高光不发灰
+- Pro 400H：绿偏青，肤色不发青
+- Velvia 50：蓝天和绿叶很浓，但红衣服不糊成色块
+- Tri-X 400：阴影留得住细节，颗粒随画面大小变化
+- 宝丽来 669：偏暖、有暗角，白衣服不发黄到脏
+- 大片：暗部偏青，肤色偏暖，夜景灯光有一点光晕
 
-达不到就改配方和资源，不改渲染架构。交互稿好不好看不作为验收。双摄的真机验收写在 [multicam.md](multicam.md)。
+达不到先改目录里的默认强度，其次换同一胶片的另一档 HaldCLUT（例如 `Kodak Portra 400 1 -` 或 `3 +`），不改渲染架构。交互稿好不好看不作为验收。双摄的真机验收写在 [multicam.md](multicam.md)。

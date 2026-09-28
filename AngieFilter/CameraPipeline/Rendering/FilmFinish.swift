@@ -1,82 +1,28 @@
 import CoreImage
 import Foundation
 
-/// Skin, tone, and halation after the color step. Recipe and LUT looks share this.
+/// Fade, halation, grain, and vignette after the color step. Only built-in Core Image filters.
 enum FilmFinish {
     static func apply(
         _ image: CIImage,
-        fade: Float,
-        shoulder: Float,
-        halation: Float,
-        skin: Float,
+        adjustment: LookAdjustment,
+        grainPlate: GrainPlateKind,
         quality: RenderQuality
     ) -> CIImage {
-        var graded = applySkin(image, amount: skin)
-        graded = applyTone(graded, fade: fade, shoulder: shoulder)
-        graded = applyHalation(graded, amount: halation, quality: quality)
-        return graded
+        var finished = applyFade(image, amount: adjustment.fade)
+        if quality != .thumbnail {
+            finished = applyHalation(finished, amount: adjustment.halation, quality: quality)
+            finished = applyGrain(finished, plate: grainPlate, amount: adjustment.grain)
+        }
+        return applyVignette(finished, amount: adjustment.vignette)
     }
 
-    /// Pulls saturation down inside a narrow orange band. Red clothes sit outside that band.
-    private static let skinKernel: CIColorKernel? = CIColorKernel(source: """
-    kernel vec4 skinGuard(__sample pixel, float amount) {
-        vec3 color = pixel.rgb;
-        float red = color.r;
-        float green = color.g;
-        float blue = color.b;
-        float maxChannel = max(red, max(green, blue));
-        float minChannel = min(red, min(green, blue));
-        float delta = maxChannel - minChannel;
-        if (delta < 0.045 || maxChannel < 0.12) {
-            return pixel;
-        }
-        float hue = 0.0;
-        if (maxChannel == red) {
-            hue = (green - blue) / delta;
-            if (hue < 0.0) {
-                hue = hue + 6.0;
-            }
-        } else if (maxChannel == green) {
-            hue = (blue - red) / delta + 2.0;
-        } else {
-            hue = (red - green) / delta + 4.0;
-        }
-        hue = hue * 60.0;
-        float distance = abs(hue - 28.0);
-        float window = 1.0 - smoothstep(6.0, 16.0, distance);
-        float saturation = delta / max(maxChannel, 0.001);
-        window = window * smoothstep(0.18, 0.38, saturation);
-        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-        float pull = amount * window * 0.55;
-        vec3 guarded = mix(color, vec3(luma, luma, luma), pull);
-        float nudge = amount * window * 0.06;
-        guarded.r = min(guarded.r + nudge, 1.0);
-        guarded.g = max(guarded.g - nudge, 0.0);
-        return vec4(guarded, pixel.a);
-    }
-    """)
-
-    private static func applySkin(_ image: CIImage, amount: Float) -> CIImage {
-        let amount = min(max(amount, 0), 1)
-        guard amount > 0.001, let skinKernel else { return image }
-        let extent = image.extent
-        guard let graded = skinKernel.apply(extent: extent, arguments: [image, NSNumber(value: amount)]) else {
-            return image
-        }
-        return graded.cropped(to: extent)
-    }
-
-    /// Lifts the black point by fade and rolls the top end by shoulder. Both zero skips the curve.
-    private static func applyTone(_ image: CIImage, fade: Float, shoulder: Float) -> CIImage {
-        let fade = min(max(fade, 0), 1)
-        let shoulder = min(max(shoulder, 0), 1)
-        guard fade > 0.001 || shoulder > 0.001 else { return image }
-        let black = CGFloat(fade) * 0.12
-        let shadow = black + 0.18 * (1 - CGFloat(fade) * 0.25)
-        let mid = 0.50 - CGFloat(fade) * 0.015
-        let highlight = 0.78 - CGFloat(shoulder) * 0.16
-        let white = 1 - CGFloat(shoulder) * 0.06 - CGFloat(fade) * 0.025
-        let output = rising([black, shadow, mid, highlight, white])
+    /// Lifts the black point. At 1 black sits at 0.12 and white drops slightly.
+    private static func applyFade(_ image: CIImage, amount: Float) -> CIImage {
+        let fade = CGFloat(min(max(amount, 0), 1))
+        guard fade > 0.001 else { return image }
+        let black = fade * 0.12
+        let output = rising([black, black + 0.18 * (1 - fade * 0.25), 0.50 - fade * 0.015, 0.78, 1 - fade * 0.025])
         return image.applyingFilter("CIToneCurve", parameters: [
             "inputPoint0": CIVector(x: 0, y: output[0]),
             "inputPoint1": CIVector(x: 0.18, y: output[1]),
@@ -100,14 +46,9 @@ enum FilmFinish {
         guard amount > 0.001 else { return image }
         let extent = image.extent
         guard extent.width > 1 else { return image }
-        let fraction: CGFloat = quality == .preview ? 0.012 : 0.022
+        let fraction: CGFloat = quality == .still ? 0.022 : 0.012
         let radius = max(2, extent.width * fraction)
-        let gray = image.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0,
-            kCIInputContrastKey: 1,
-            kCIInputBrightnessKey: 0
-        ]).cropped(to: extent)
-        let mask = gray.applyingFilter("CIToneCurve", parameters: [
+        let mask = luminance(image).applyingFilter("CIToneCurve", parameters: [
             "inputPoint0": CIVector(x: 0, y: 0),
             "inputPoint1": CIVector(x: 0.55, y: 0),
             "inputPoint2": CIVector(x: 0.72, y: 0.08),
@@ -132,5 +73,59 @@ enum FilmFinish {
             kCIInputBackgroundImageKey: withHalo
         ]).cropped(to: extent)
         return GradeApplicator.mix(withHalo, hazed, amount: amount * 0.28)
+    }
+
+    /// A tiled plate in soft light, masked so grain sits in the shadows and pure white stays clean.
+    /// A look without a plate that has its grain raised uses the fine plate.
+    private static func applyGrain(_ image: CIImage, plate plateKind: GrainPlateKind, amount: Float) -> CIImage {
+        let resolved: GrainPlateKind = plateKind == .none ? .fine : plateKind
+        guard amount > 0.001, let plate = GrainLibrary.image(for: resolved) else { return image }
+        let extent = image.extent
+        guard extent.width > 1, plate.extent.width > 1 else { return image }
+
+        let repeats: CGFloat = resolved == .coarse ? 1.7 : 3
+        let scale = (extent.width / repeats) / plate.extent.width
+        let tiled = plate
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            .applyingFilter("CIAffineTile")
+            .cropped(to: extent)
+        let soft = tiled.applyingFilter("CISoftLightBlendMode", parameters: [
+            kCIInputBackgroundImageKey: image
+        ]).cropped(to: extent)
+        let mask = luminance(image).applyingFilter("CIToneCurve", parameters: [
+            "inputPoint0": CIVector(x: 0, y: 0.15),
+            "inputPoint1": CIVector(x: 0.18, y: 1),
+            "inputPoint2": CIVector(x: 0.42, y: 0.72),
+            "inputPoint3": CIVector(x: 0.72, y: 0.18),
+            "inputPoint4": CIVector(x: 1, y: 0)
+        ]).cropped(to: extent)
+        let masked = soft.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: image,
+            kCIInputMaskImageKey: mask
+        ]).cropped(to: extent)
+        return GradeApplicator.mix(image, masked, amount: amount)
+    }
+
+    /// `CIVignetteEffect` around the center. Amount 1 darkens the corners by about a third.
+    private static func applyVignette(_ image: CIImage, amount: Float) -> CIImage {
+        let amount = min(max(amount, 0), 1.5)
+        guard amount > 0.001 else { return image }
+        let extent = image.extent
+        let halfDiagonal = hypot(extent.width, extent.height) / 2
+        guard halfDiagonal > 1 else { return image }
+        return image.applyingFilter("CIVignetteEffect", parameters: [
+            kCIInputCenterKey: CIVector(x: extent.midX, y: extent.midY),
+            kCIInputRadiusKey: halfDiagonal * 0.85,
+            kCIInputIntensityKey: amount * 0.35,
+            "inputFalloff": 0.6
+        ]).cropped(to: extent)
+    }
+
+    private static func luminance(_ image: CIImage) -> CIImage {
+        image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0,
+            kCIInputContrastKey: 1,
+            kCIInputBrightnessKey: 0
+        ]).cropped(to: image.extent)
     }
 }

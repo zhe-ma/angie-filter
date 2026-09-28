@@ -34,7 +34,7 @@
 
 ## 系统限制
 
-依据是 Apple 的 [AVMultiCamPiP](https://developer.apple.com/documentation/AVFoundation/avmulticampip-capturing-from-multiple-cameras) 和 `AVCaptureDevice.Format.isMultiCamSupported`。iPhone 13 是 A15，在 A12 及更新的机器上可以开多摄。真正能不能开，以 `isMultiCamSupported` 和 `supportedMultiCamDeviceSets` 为准，不在代码里写死机型名单。
+依据是 Apple 的 [AVMultiCamPiP](https://developer.apple.com/documentation/AVFoundation/avmulticampip-capturing-from-multiple-cameras) 和 `AVCaptureDevice.Format.isMultiCamSupported`。iPhone 13 是 A15，在 A12 及更新的机器上可以开多摄。真正能不能开，以 `isMultiCamSupported` 和 `supportedMultiCamDeviceSets` 为准，不在代码里写死机型名单。`supportedMultiCamDeviceSets` 要从一个 `position: .unspecified` 的发现会话里取：只找后置的会话只会列出后置镜头之间的组合，永远找不到前后一对，双摄会一直报「不能同时打开」。
 
 多摄会话只用 `.inputPriority`。分辨率从该设备里 `isMultiCamSupported == true` 的格式里选，并且要在 `addInput` 之前设好 `activeFormat`。这批格式比单摄的 `.photo` 少。
 
@@ -113,7 +113,7 @@ flowchart TB
 
 两路回调各自更新自己的最近一帧。任一帧到达，就用另一路的上一帧一起合成。某一路还没来第一帧时，那一格留黑。合成进行中又来了新帧，就在这一轮画完后再合成一次，不丢掉已经记下的最新画面。
 
-预览格式在多摄格式里选宽边接近 1920 的一档。两路都跑现有的立方体或 LUT，再加上 `FilmFinish`。iPhone 13 上若预览稳不住 30fps，先降格式，再考虑预览时跳过光晕的模糊。缩略图仍用单路最近一帧加 `GradeApplicator`，不合成双摄，避免条上出现两张脸。
+预览格式在多摄格式里选宽边接近 1920 的一档。两路都跑同一套颜色和 `FilmFinish`。iPhone 13 上若预览稳不住 30fps，先降格式，再考虑预览时跳过光晕的模糊。缩略图仍用单路最近一帧加 `GradeApplicator`，不合成双摄，避免条上出现两张脸。
 
 成片：两路各挂一个 `AVCapturePhotoOutput`，快门时都触发。两张都到了，用按下时冻结的 `DualSettings`、各自的方向和前置镜像，按预览同一套格子合成，再套相框。缺一路就失败，不保存半张。日期按按下快门的那一天写进相框。
 

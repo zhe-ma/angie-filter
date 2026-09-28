@@ -24,7 +24,7 @@ enum LookLibrary {
         grade: .none
     )
 
-    /// Recipe looks ship in Looks.json. LUT looks ship in LUTLooks.json and are appended.
+    /// Film and built-in looks ship in Looks.json. The portrait, scenery, food, and fresh LUTs ship in LUTLooks.json and are appended.
     private static func load() -> [Look] {
         let recipes = records(named: "Looks")
         guard !recipes.isEmpty else { return [original] }
@@ -45,7 +45,7 @@ enum LookLibrary {
               let records = try? JSONDecoder().decode([LookRecord].self, from: data) else {
             return []
         }
-        return records.map(\.look)
+        return records.compactMap(\.look)
     }
 
     private static func bundledFile(named name: String) -> URL? {
@@ -59,15 +59,13 @@ enum LookLibrary {
 
     private static let familySpecs: [(id: String, name: String, ids: [String])] = [
         ("original", "原图", [Look.originalID]),
-        ("leica", "徕卡", ["natural", "classic", "bright", "mono"]),
-        ("fuji", "富士", ["standard", "vivid", "soft", "chrome", "neg", "nostalgia", "real", "cinema", "bleach", "portrait", "portrait-hi", "acros", "pro400h", "superia"]),
-        ("kodak", "柯达", ["portra160", "portra400", "portra800", "gold", "ektar", "ultramax", "colorplus", "kodachrome", "ektachrome", "trix", "tmax"]),
-        ("cinema", "电影", ["cs800t", "cs50d", "cs400d", "v250d", "v500t", "trailer"]),
-        ("ricoh", "理光", ["positive", "negative", "hibw"]),
-        ("hasselblad", "哈苏", ["hncs"]),
-        ("ilford", "依尔福", ["hp5", "delta", "fp4", "xp2"]),
-        ("polaroid", "宝丽来", ["sx70", "p600"]),
-        ("digital", "数码", ["canon", "nikon", "sony"]),
+        ("kodak", "柯达", ["portra160", "portra400", "portra400vc", "portra800", "ektar100", "elite200", "elite400", "kodachrome64", "ektachrome100vs", "elitechrome200", "trix400", "tmax100", "bw400cn"]),
+        ("fuji", "富士", ["pro400h", "pro160c", "pro800z", "superia200", "superia400", "superia800", "reala100", "velvia50", "provia100f", "astia100f", "acros100", "neopan1600"]),
+        ("instant", "拍立得", ["fp100c", "polaroid669", "polaroid669cold", "polaroid690", "px70", "px680", "px100warm", "timezero", "polachrome", "polaroid665"]),
+        ("mono", "黑白", ["hp5", "delta100", "delta3200", "fp4", "panf50", "xp2", "apx100", "retro100", "ortho25", "infrared"]),
+        ("agfa", "爱克发", ["vista200", "precisa100", "ultra100", "xproslide", "redscale", "elitexpro"]),
+        ("cinema", "电影感", ["tealorange", "bleachbypass", "crispwarm", "crispwinter", "softwarming", "latesunset", "fallcolors", "moonlight", "foggynight", "candlelight", "tealmagentagold"]),
+        ("system", "系统", ["sys-chrome", "sys-fade", "sys-instant", "sys-process", "sys-transfer", "sys-mono", "sys-tonal", "sys-noir"]),
         ("lut-portrait", "人像", ["lut-ziran", "lut-qingtou", "lut-wenrou", "lut-baixi", "lut-fennen", "lut-candyb", "lut-dannai", "lut-musi", "lut-zhuguang", "lut-huoli", "lut-qingchun"]),
         ("lut-scenery", "风景", ["lut-xuanlan", "lut-chengjing", "lut-dushi", "lut-jiaoye"]),
         ("lut-food", "美食", ["lut-meiwei", "lut-xinxian", "lut-youge", "lut-lengcui"]),
@@ -103,52 +101,44 @@ private struct LookRecord: Decodable {
     let id: String
     let name: String
     let about: String
-    let clarity: Float?
+    let grade: String?
+    let lut: String?
+    let filter: String?
+    let strength: Float?
+    let fade: Float?
+    let halation: Float?
     let grain: Float?
     let grainPlate: GrainPlateKind?
     let vignette: Float?
-    let fade: Float?
-    let shoulder: Float?
-    let halation: Float?
-    let skin: Float?
-    let grade: String?
-    let lutImage: String?
-    let strength: Float?
 
-    var look: Look {
-        let finish = LookFinish(
-            fade: fade ?? 0,
-            shoulder: shoulder ?? 0,
-            halation: halation ?? 0,
-            skin: skin ?? 0
-        )
-        if id == Look.originalID {
-            return Look(id: id, name: name, about: about, grade: .none, finish: finish)
+    /// Nil for an unknown grade, so a bad entry is skipped instead of showing as the original.
+    var look: Look? {
+        guard id != Look.originalID else {
+            return Look(id: id, name: name, about: about, grade: .none)
         }
-        if grade == "lutImage" {
-            return Look(
-                id: id,
-                name: name,
-                about: about,
-                grade: .lutImage(LUTImageGrade(
-                    imageName: lutImage ?? id,
-                    strength: strength ?? 1
-                )),
-                finish: finish
-            )
+        let resolved: LookGrade
+        switch grade {
+        case "lut":
+            resolved = .lut(LUTGrade(imageName: lut ?? id, strength: min(max(strength ?? 1, 0), 1)))
+        case "builtIn":
+            guard let filter else { return nil }
+            resolved = .builtIn(BuiltInGrade(filterName: filter))
+        default:
+            return nil
         }
+        let plate = grainPlate ?? .fine
         return Look(
             id: id,
             name: name,
             about: about,
-            grade: .colorCube(ColorCubeGrade(
-                cubeName: id,
-                clarity: clarity ?? 0,
+            grade: resolved,
+            finish: LookFinish(
+                fade: fade ?? 0,
+                halation: halation ?? 0,
                 grain: grain ?? 0,
-                grainPlate: grainPlate ?? .none,
+                grainPlate: plate,
                 vignette: vignette ?? 0
-            )),
-            finish: finish
+            )
         )
     }
 }

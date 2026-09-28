@@ -12,17 +12,18 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "angie.camera.session")
-    private let videoQueue = DispatchQueue(label: "angie.camera.video")
+    private let videoQueue = DispatchQueue(label: "angie.camera.video", qos: .userInteractive)
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let parameters = Locked(RenderParameters())
-    private let latestSource = Locked<CIImage?>(nil)
+    private let thumbnailTap = ThumbnailFrameTap()
     private let captureFacing = Locked(CameraFacing.back)
     private var status = CameraStatus()
     private var device: AVCaptureDevice?
     private var isConfigured = false
-    private let renderBusy = Locked(false)
     private let previewToken = Locked(0)
+    private let framePerf = PerfWindow("camera frames")
+    private let loggedLook = Locked("")
     private let captions = FrameCaptionCache()
     private let modelName = PhoneModelName.marketingName(for: DeviceMachine.identifier)
     private let shutterDate = Locked("")
@@ -44,10 +45,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     func currentThumbnailSource() -> CIImage? {
-        latestSource.with { image in
-            guard let image else { return nil }
-            return FrameImageMaker.thumbnailSource(from: image)
-        }
+        thumbnailTap.latest()
     }
 
     func start() {
@@ -133,32 +131,33 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 settings.flashMode = flash
             }
             self.captureFacing.with { $0 = self.status.facing }
+            if let connection = self.photoOutput.connection(with: .video) {
+                PhotoOrientation.preparePortrait(connection)
+            }
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        let busy = renderBusy.with { flag -> Bool in
-            if flag { return true }
-            flag = true
-            return false
-        }
-        guard !busy else { return }
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            renderBusy.with { $0 = false }
-            return
-        }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let start = PerfLog.now()
         let renderParameters = parameters.with { $0 }
+        if renderParameters.lookID != loggedLook.with({ $0 }) {
+            loggedLook.with { $0 = renderParameters.lookID }
+            PerfLog.line("preview look \(renderParameters.lookID), buffer \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))")
+        }
         let source = FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
-        latestSource.with { $0 = source }
+        thumbnailTap.offer(source)
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
-        let token = previewToken.with { $0 }
-        let busyFlag = renderBusy
-        DispatchQueue.main.async { [weak self] in
-            self?.previewView.draw(image: framed, token: token)
-            busyFlag.with { $0 = false }
-        }
+        previewView.draw(image: framed, token: previewToken.with { $0 })
+        framePerf.add(["build": PerfLog.ms(since: start)])
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        framePerf.tally("cameraDropped")
+        let reason = CMGetAttachment(sampleBuffer, key: kCMSampleBufferAttachmentKey_DroppedFrameReason, attachmentModeOut: nil)
+        PerfLog.line("camera dropped frame: \(reason.map { "\($0)" } ?? "unknown")")
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
@@ -166,7 +165,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             publishFailure(error.localizedDescription)
             return
         }
-        guard let data = photo.fileDataRepresentation(), let photoImage = CIImage(data: data) else {
+        guard let data = photo.fileDataRepresentation(), let photoImage = PhotoOrientation.uprightImage(from: data) else {
             publishFailure("没有拿到照片")
             return
         }

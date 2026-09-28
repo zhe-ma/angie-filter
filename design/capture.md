@@ -1,6 +1,8 @@
 # 采集
 
-采集在 `CameraSessionController`。双摄另走 `DualSessionController`，见 [multicam.md](multicam.md)。预览画到 `MTKView`（`PreviewMetalView`），不用 `AVCaptureVideoPreviewLayer`。工作色彩空间是 Display P3：`CIContext` 的 `workingColorSpace`，以及色彩立方体滤镜的 `inputColorSpace`，都是 Display P3。LUT 图按原字节采样，不在采集这一层做转换。渲染怎么套风格见 [rendering.md](rendering.md)。
+采集在 `CameraSessionController`。双摄另走 `DualSessionController`，见 [multicam.md](multicam.md)。预览画到 `CAMetalLayer`（`PreviewMetalView`），不用 `AVCaptureVideoPreviewLayer`。不要设 `deliversPreviewSizedOutputBuffers`：`.photo` 预设下它会抛异常闪退。预览尺寸由 `FrameImageMaker` 把长边收到 1920。`CIContext` 的工作色彩空间是 Display P3。LUT 在 sRGB 里查表，转换由 `CIColorCubeWithColorSpace` 做，不在采集这一层做。渲染怎么套风格见 [rendering.md](rendering.md)。
+
+采集直接用 AVFoundation，代码组织向 Apple 的 AVCam 和 AVMultiCamPiP 两个官方样例看齐，不引入第三方相机库。原因见最后一节。
 
 ```mermaid
 flowchart TB
@@ -31,7 +33,7 @@ flowchart TB
 - `AVCaptureVideoDataOutput`：像素格式 `32BGRA`，`alwaysDiscardsLateVideoFrames = true`，委托在 `videoQueue`
 - `AVCapturePhotoOutput`：`maxPhotoQualityPrioritization = .quality`
 
-不开启 Live Photo、人像和 RAW。画幅切换不重建会话，裁切发生在渲染。翻转摄像头会拆掉当前输入再挂上另一侧的设备，并回到该设备的 1x 档。
+这一阶段不开启 Live Photo、人像和 RAW，Live Photo 和录像的路线在最后一节。画幅切换不重建会话，裁切发生在渲染。翻转摄像头会拆掉当前输入再挂上另一侧的设备，并回到该设备的 1x 档。
 
 性能预算（iPhone 13）：预览 30fps，忙时丢旧帧，拍照不堵住预览队列，`CIContext` 复用。预览的 context 建在 `PreviewMetalView` 上，成片也用它的 `makeImage`。会话目前只丢迟到帧，还没有把 `activeVideoMinFrameDuration` 锁到 30fps。
 
@@ -68,9 +70,11 @@ flowchart TB
 | 来源 | 后置 | 前置 |
 | --- | --- | --- |
 | 预览帧 | `CGImagePropertyOrientation.right` | `.leftMirrored` |
-| 成片 | `fileDataRepresentation` 已经是 EXIF `.up`，渲染时把方向改成 `.up` | 同样先按 `.up`，再 `mirrorHorizontally` |
+| 成片 | 快门前把照片连接设成 `videoRotationAngle = 90`、不镜像；读图用 `CIImage(data:options: [.applyOrientationProperty: true])` 按 EXIF 转正，之后方向按 `.up` | 同样转正，再 `mirrorHorizontally` |
 
 `.leftMirrored` 已经带镜像，预览路径不再额外做一次水平翻转。前置保存结果和取景一致，都是镜像。
+
+照片的像素仍是传感器横向，方向只写在 EXIF 里。`CIImage(data:)` 默认不读这个标记，不加选项时存下来的是横着的图。连接设置和读图在 `PhotoOrientation`，单摄和双摄共用。
 
 `FrameImageMaker` 的几何顺序：按 `orientation` 转正，需要时水平镜像，再 `AspectCrop`。
 
@@ -101,3 +105,34 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 ## 双摄
 
 单摄继续用上面的 `AVCaptureSession` 和虚拟相机。点「双摄」后先停掉它，再启动 `AVCaptureMultiCamSession`。退出时反过来。预览视图不换。两路先各自调色，合成后再套相框。成片在双摄自己的 `CIContext` 里导出，不占用预览那一个 context。模拟器 `isMultiCamSupported` 为 false，顶栏没有这个按钮。
+
+## 以后：Live Photo 和录像
+
+这一阶段仍只拍照片。下面是以后要做时的路线，现在的会话结构已经能接上。
+
+为什么不用第三方相机库：
+
+| | Live Photo | 前后同时 | 实时 Core Image 预览 | 说明 |
+| --- | --- | --- | --- | --- |
+| Apple AVCam | 有 | 另见 AVMultiCamPiP | 用预览图层，要换成我们的 `PreviewMetalView` | 官方维护，照片、Live Photo、录像都有 |
+| MijickCamera | 没有 | 没有 | 只能挂 `CIFilter` 数组 | 连界面一起提供，会话在库里 |
+| Aespa | 没有 | 没有 | 没有 | 只做拍照和录像的封装 |
+| NextLevel | 没有 | 没有 | 可以拿帧自己处理 | 双摄指的是双镜头虚拟设备，不是多摄会话 |
+
+第三方库都把会话握在自己手里。我们的预览要从视频输出拿帧、调色、画进 `CAMetalLayer`，双摄还要 `AVCaptureMultiCamSession`，这两件事它们都挡在中间。
+
+**Live Photo。** 只在单摄。以 `AVCapturePhotoOutput.isLivePhotoCaptureSupported` 为准，多摄会话里不出现入口。
+
+1. 会话已经是 `.photo` 预设。打开 `isLivePhotoCaptureEnabled`，快门时给 `livePhotoMovieFileURL`。
+2. 静图照旧走 `FrameImageMaker` 和 `GradeApplicator`。
+3. 短视频在 `didFinishProcessingLivePhotoToMovieFileAt` 之后逐帧调色：`AVAssetReader` 读出，用同一个 `GradeApplicator` 和相框渲进 `CVPixelBuffer`，`AVAssetWriter` 写回。音轨原样拷。静图时刻的元数据轨（`com.apple.quicktime.still-image-time`）和内容标识要一起拷，否则相册认不出是一对。`AVAssetExportSession` 加 `AVVideoComposition` 的做法会丢这条元数据轨，要在真机上确认，丢就用读写器。
+4. `PHAssetCreationRequest` 同时加 `.photo` 和 `.pairedVideo`。
+
+**录像。** 单摄和双摄都能做，录的是调好色、带相框的画面。
+
+- 不用 `AVCaptureMovieFileOutput`，它写进去的是没调色的原始帧。
+- 视频输出送来的帧照旧调色。预览那份收到 1920 以内；录像那份按录像分辨率，在自己的 `CIContext` 里渲进 `AVAssetWriterInputPixelBufferAdaptor` 的缓冲池，再交给 `AVAssetWriter`，编码 HEVC。
+- 声音加 `AVCaptureAudioDataOutput`，时间戳用采样缓冲自己的，不用系统时钟。
+- 开录前把 `activeVideoMinFrameDuration` 锁到 30fps。iPhone 13 上预览、录像两份渲染加起来要撑住 30fps，撑不住先降录像分辨率。
+- 方向和镜像跟预览一致，前置录下来也是镜像。
+- 先录 SDR，色彩标记 BT.709。HDR 以后单独做。

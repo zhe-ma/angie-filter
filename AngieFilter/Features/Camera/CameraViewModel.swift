@@ -2,6 +2,41 @@ import Combine
 import CoreImage
 import SwiftUI
 
+/// One low-priority context, so the strip yields the GPU to the live preview.
+/// Each refresh renders the frame once into a small square, then grades that bitmap per look.
+private enum ThumbnailBake {
+    static let context = CIContext(options: [
+        .cacheIntermediates: false,
+        .priorityRequestLow: true,
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3) as Any
+    ])
+
+    /// The strip shows a square, so only the center square is graded.
+    static func base(from source: CIImage) -> CIImage? {
+        let extent = source.extent
+        let edge = min(extent.width, extent.height).rounded(.down)
+        guard edge > 1 else { return nil }
+        let square = CGRect(x: extent.midX - edge / 2, y: extent.midY - edge / 2, width: edge, height: edge)
+        let shifted = source.cropped(to: square)
+            .transformed(by: CGAffineTransform(translationX: -square.minX, y: -square.minY))
+        guard let cgImage = context.createCGImage(shifted, from: CGRect(x: 0, y: 0, width: edge, height: edge)) else {
+            return nil
+        }
+        return CIImage(cgImage: cgImage)
+    }
+
+    static func image(from base: CIImage, look: Look) -> UIImage? {
+        let graded = GradeApplicator.apply(
+            base,
+            look: look,
+            adjustment: .baseline(for: look),
+            quality: .thumbnail
+        )
+        guard let cgImage = context.createCGImage(graded, from: base.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+}
+
 @MainActor
 final class CameraViewModel: ObservableObject {
     @Published private(set) var status = CameraStatus()
@@ -100,6 +135,7 @@ final class CameraViewModel: ObservableObject {
             self.syncParameters()
         }
         syncParameters()
+        MainThreadWatch.start()
         session.start()
         dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -336,9 +372,9 @@ final class CameraViewModel: ObservableObject {
             familyID = LookLibrary.family(containing: lookID).id
             refreshThumbnails()
             refreshTimer?.invalidate()
-            refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
                 Task { @MainActor in
-                    self?.refreshThumbnails()
+                    self?.refreshThumbnails(restart: false)
                 }
             }
         } else {
@@ -351,6 +387,8 @@ final class CameraViewModel: ObservableObject {
         adjustOpen = false
         refreshTimer?.invalidate()
         refreshTimer = nil
+        thumbnailWork?.cancel()
+        thumbnailWork = nil
     }
 
     func toggleFrame() {
@@ -683,42 +721,64 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    private func refreshThumbnails() {
+    private func refreshThumbnails(restart: Bool = true) {
+        guard filtersOpen else { return }
+        if !restart, thumbnailWork != nil { return }
         let source = dualOn ? dualSession.currentThumbnailSource() : session.currentThumbnailSource()
-        guard filtersOpen, let source else { return }
+        guard let source else { return }
         thumbnailWork?.cancel()
-        let looks = visibleLooks
+        let selected = lookID
+        let looks = visibleLooks.filter { $0.id == selected } + visibleLooks.filter { $0.id != selected }
         var work: DispatchWorkItem?
         work = DispatchWorkItem {
-            let context = CIContext(options: [
-                .cacheIntermediates: false,
-                .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3) as Any
-            ])
-            var images: [Look.ID: UIImage] = [:]
-            for look in looks {
-                if work?.isCancelled == true { return }
-                let graded = GradeApplicator.apply(
-                    source,
-                    look: look,
-                    adjustment: .baseline(for: look),
-                    quality: .preview
-                )
-                let extent = graded.extent.integral
-                guard extent.width > 1, let cgImage = context.createCGImage(graded, from: extent) else { continue }
-                images[look.id] = UIImage(cgImage: cgImage)
-            }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, work?.isCancelled == false else { return }
-                var merged = self.thumbnails
-                for (id, image) in images {
-                    merged[id] = image
+            let deliver = { (images: [Look.ID: UIImage], last: Bool) in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, let work, work.isCancelled == false else { return }
+                    if !images.isEmpty {
+                        self.thumbnails.merge(images) { _, new in new }
+                    }
+                    if last, self.thumbnailWork === work {
+                        self.thumbnailWork = nil
+                    }
                 }
-                self.thumbnails = merged
+            }
+            let passStart = PerfLog.now()
+            guard let base = ThumbnailBake.base(from: source) else {
+                deliver([:], true)
+                return
+            }
+            let baseMs = PerfLog.ms(since: passStart)
+            var slowest = (id: "", ms: 0.0)
+            var batch: [Look.ID: UIImage] = [:]
+            for (index, look) in looks.enumerated() {
+                if work?.isCancelled == true {
+                    PerfLog.line("thumbnails cancelled after \(index) of \(looks.count)")
+                    return
+                }
+                let lookStart = PerfLog.now()
+                if let image = ThumbnailBake.image(from: base, look: look) {
+                    batch[look.id] = image
+                }
+                let lookMs = PerfLog.ms(since: lookStart)
+                if lookMs > slowest.ms { slowest = (look.id, lookMs) }
+                let last = index == looks.count - 1
+                if batch.count == 4 || last {
+                    deliver(batch, last)
+                    batch = [:]
+                }
+            }
+            PerfLog.line(String(
+                format: "thumbnails %d looks in %.1f ms (base %.1f, slowest %@ %.1f)",
+                looks.count, PerfLog.ms(since: passStart), baseMs, slowest.id, slowest.ms
+            ))
+            if looks.isEmpty {
+                deliver([:], true)
             }
         }
         thumbnailWork = work
         if let work {
-            DispatchQueue.global(qos: .userInitiated).async(execute: work)
+            let qos: DispatchQoS.QoSClass = restart ? .userInitiated : .utility
+            DispatchQueue.global(qos: qos).async(execute: work)
         }
     }
 

@@ -20,7 +20,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let previewView: PreviewMetalView
     private let session = AVCaptureMultiCamSession()
     private let sessionQueue = DispatchQueue(label: "angie.camera.dual.session")
-    private let videoQueue = DispatchQueue(label: "angie.camera.dual.video")
+    private let videoQueue = DispatchQueue(label: "angie.camera.dual.video", qos: .userInteractive)
     private let photoQueue = DispatchQueue(label: "angie.camera.dual.photo")
     private let backVideoOutput = AVCaptureVideoDataOutput()
     private let frontVideoOutput = AVCaptureVideoDataOutput()
@@ -28,6 +28,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let frontPhotoOutput = AVCapturePhotoOutput()
     private let parameters = Locked(RenderParameters())
     private let latest = Locked<[CameraFacing: CIImage]>([:])
+    private let thumbnailTaps: [CameraFacing: ThumbnailFrameTap] = [.back: ThumbnailFrameTap(), .front: ThumbnailFrameTap()]
     private let imageAspect = Locked<[CameraFacing: CGFloat]>([:])
     private let selected = Locked(CameraFacing.back)
     private let flashMode = Locked(FlashMode.off)
@@ -75,11 +76,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     }
 
     func currentThumbnailSource() -> CIImage? {
-        let facing = selected.with { $0 }
-        return latest.with { images in
-            guard let image = images[facing] else { return nil }
-            return FrameImageMaker.thumbnailSource(from: image)
-        }
+        thumbnailTaps[selected.with { $0 }]?.latest()
     }
 
     func start(completion: @escaping (DualStartOutcome) -> Void) {
@@ -222,10 +219,12 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             orientation: facing == .front ? .leftMirrored : .right,
             mirrorHorizontally: false
         )
-        latest.with { $0[facing] = image }
         if image.extent.height > 1 {
             imageAspect.with { $0[facing] = image.extent.width / image.extent.height }
         }
+        let preview = FrameImageMaker.scaledForPreview(image)
+        latest.with { $0[facing] = preview }
+        thumbnailTaps[facing]?.offer(preview)
         scheduleCompose()
     }
 
@@ -239,7 +238,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             resolvePhoto(generation: request.generation, facing: request.facing, image: nil)
             return
         }
-        guard let data = photo.fileDataRepresentation(), let source = CIImage(data: data) else {
+        guard let data = photo.fileDataRepresentation(), let source = PhotoOrientation.uprightImage(from: data) else {
             resolvePhoto(generation: request.generation, facing: request.facing, image: nil)
             return
         }
@@ -350,10 +349,8 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         let composed = DualFrameComposer.compose(back: back, front: front, settings: settings, canvas: canvas)
         let framed = framedImage(composed, parameters: renderParameters, synchronousCaption: false)
         let token = previewToken.with { $0 }
-        DispatchQueue.main.async { [weak self] in
-            self?.previewView.draw(image: framed, token: token)
-            self?.finishCompose()
-        }
+        previewView.draw(image: framed, token: token)
+        finishCompose()
     }
 
     private func finishCompose() {
@@ -432,6 +429,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         if !session.isRunning {
             session.startRunning()
         }
+        PerfLog.line("dual: configured, running \(session.isRunning)")
         status.isRunning = session.isRunning
         status.hasCamera = true
         publishStatus()
@@ -457,6 +455,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private func configure() -> Bool {
         isConfigured = false
         guard let pair = Self.devicePair() else {
+            PerfLog.line("dual: no multicam back/front pair, supported \(Self.isSupported)")
             status.hasCamera = false
             publishFailure("这台设备不能同时打开前后镜头")
             publishStatus()
@@ -469,6 +468,10 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             let added = add(pair.back, video: backVideoOutput, photo: backPhotoOutput, maxWidth: width)
                 && add(pair.front, video: frontVideoOutput, photo: frontPhotoOutput, maxWidth: width)
             session.commitConfiguration()
+            PerfLog.line(String(
+                format: "dual: width %d added %@ hardwareCost %.2f pressureCost %.2f",
+                width, added ? "yes" : "no", session.hardwareCost, session.systemPressureCost
+            ))
             if added, session.hardwareCost <= 1, session.systemPressureCost <= 1 {
                 backDevice = pair.back
                 frontDevice = pair.front
@@ -488,7 +491,11 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     }
 
     private func add(_ device: AVCaptureDevice, video: AVCaptureVideoDataOutput, photo: AVCapturePhotoOutput, maxWidth: Int32) -> Bool {
-        guard let format = Self.format(for: device, maxWidth: maxWidth) else { return false }
+        func fail(_ step: String) -> Bool {
+            PerfLog.line("dual: \(device.position == .front ? "front" : "back") failed at \(step), max width \(maxWidth)")
+            return false
+        }
+        guard let format = Self.format(for: device, maxWidth: maxWidth) else { return fail("format") }
         do {
             try device.lockForConfiguration()
             device.activeFormat = format
@@ -497,28 +504,29 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             device.activeVideoMaxFrameDuration = frameDuration
             device.unlockForConfiguration()
         } catch {
-            return false
+            return fail("lock")
         }
-        guard let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return false }
+        guard let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return fail("input") }
         session.addInputWithNoConnections(input)
 
-        guard session.canAddOutput(video) else { return false }
+        guard session.canAddOutput(video) else { return fail("video output") }
         session.addOutputWithNoConnections(video)
         guard let videoPort = input.ports(for: .video, sourceDeviceType: device.deviceType, sourceDevicePosition: device.position).first else {
-            return false
+            return fail("video port")
         }
         let videoConnection = AVCaptureConnection(inputPorts: [videoPort], output: video)
-        guard session.canAddConnection(videoConnection) else { return false }
+        guard session.canAddConnection(videoConnection) else { return fail("video connection") }
         session.addConnection(videoConnection)
 
-        guard session.canAddOutput(photo) else { return false }
+        guard session.canAddOutput(photo) else { return fail("photo output") }
         session.addOutputWithNoConnections(photo)
         guard let photoPort = input.ports(for: .video, sourceDeviceType: device.deviceType, sourceDevicePosition: device.position).first else {
-            return false
+            return fail("photo port")
         }
         let photoConnection = AVCaptureConnection(inputPorts: [photoPort], output: photo)
-        guard session.canAddConnection(photoConnection) else { return false }
+        guard session.canAddConnection(photoConnection) else { return fail("photo connection") }
         session.addConnection(photoConnection)
+        PhotoOrientation.preparePortrait(photoConnection)
         photo.maxPhotoQualityPrioritization = .quality
         return true
     }
@@ -641,19 +649,17 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         return stops
     }
 
+    /// One discovery session over both sides. A session limited to one position only reports
+    /// multicam sets made of that side's cameras, so it never shows a back and front pair.
     private static func devicePair() -> (back: AVCaptureDevice, front: AVCaptureDevice)? {
-        let backDiscovery = AVCaptureDevice.DiscoverySession(
+        let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.builtInWideAngleCamera],
             mediaType: .video,
-            position: .back
+            position: .unspecified
         )
-        let frontDiscovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera],
-            mediaType: .video,
-            position: .front
-        )
-        guard let back = backDiscovery.devices.first, let front = frontDiscovery.devices.first else { return nil }
-        let supported = backDiscovery.supportedMultiCamDeviceSets.contains { set in
+        guard let back = discovery.devices.first(where: { $0.position == .back }),
+              let front = discovery.devices.first(where: { $0.position == .front }) else { return nil }
+        let supported = discovery.supportedMultiCamDeviceSets.contains { set in
             set.contains(back) && set.contains(front)
         }
         guard supported else { return nil }

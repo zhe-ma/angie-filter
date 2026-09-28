@@ -45,7 +45,7 @@ flowchart LR
     review[Review]
   end
   subgraph resources [Resources]
-    cubes[ColorCubes]
+    films[FilmLUTs]
     luts[LUTs]
     grain[Grain]
     json[Looks.json / LUTLooks.json]
@@ -54,7 +54,7 @@ flowchart LR
   camera --> looks
   session --> render
   render --> looks
-  render --> cubes
+  render --> films
   render --> luts
   render --> grain
   looks --> json
@@ -67,11 +67,11 @@ flowchart LR
 | Domain | `AngieFilter/Domain/Capture/` | 画幅、变焦档、闪光灯、朝向、权限。界面不读 `AVCaptureDevice` |
 | Domain | `AngieFilter/Domain/Rendering/` | `RenderParameters`、`LookAdjustment`、`RenderQuality` |
 | CameraPipeline | `AngieFilter/CameraPipeline/Capture/` | `CameraSessionController`、`DualSessionController`、`ZoomLadderBuilder` |
-| CameraPipeline | `AngieFilter/CameraPipeline/Rendering/` | 几何、分发、两套 grader、资源缓存、预览 |
+| CameraPipeline | `AngieFilter/CameraPipeline/Rendering/` | 几何、分发、颜色、收尾、LUT 缓存、预览 |
 | CameraPipeline | `AngieFilter/CameraPipeline/Photos/` | `PhotoLibraryStore` |
 | Features | `AngieFilter/Features/Camera/` | `CameraView`、`CameraViewModel`、`FilterStripView` |
 | Features | `AngieFilter/Features/Review/` | `ReviewView` |
-| 资源 | `AngieFilter/Resources/` | 立方体、LUT 图、颗粒板、两份目录 JSON |
+| 资源 | `AngieFilter/Resources/` | 胶片 LUT 和许可、其余 LUT 图、颗粒板、两份目录 JSON |
 
 ## 一帧怎么走
 
@@ -84,75 +84,68 @@ flowchart TB
   geo --> apply["GradeApplicator"]
   lib["LookLibrary.look"] --> apply
   apply --> none["grade.none<br/>原图"]
-  apply --> cube["ColorCubeGrader<br/>配方立方体"]
-  apply --> lut["LUTImageGrader<br/>512 LUT 图"]
-  cube --> finish["FilmFinish<br/>肤色、影调、光晕"]
-  lut --> finish
-  finish --> spatial{"配方?"}
-  spatial -->|是| rest["清晰度、颗粒、暗角"]
-  spatial -->|LUT| mix["按强度溶回原图"]
+  apply --> color["ColorGrader<br/>LUT 或 Core Image 照片效果"]
+  color --> finish["FilmFinish<br/>褪色、光晕、颗粒、暗角"]
+  finish --> mix["按强度溶回原图"]
   none --> mix
-  rest --> mix
   mix --> border{"相框打开?"}
-  border -->|否| out["预览 MTKView / 确认页 UIImage"]
+  border -->|否| out["预览 CAMetalLayer / 确认页 UIImage"]
   border -->|是| frameOut["FrameCompositor 外扩或盖在照片上"]
   frameOut --> out
 ```
 
-`RenderParameters` 放在 `Locked` 里。`videoQueue` 取出一份值再渲染，不在预览队列里锁住 ViewModel。
+`RenderParameters` 放在 `Locked` 里。`videoQueue` 取出一份值再渲染，不在预览队列里锁住 ViewModel。预览画进 `CAMetalLayer`，渲染不经过主线程；GPU 上同时只有一帧，其余只留最新一张。
 
-缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `preview`。缩略图不加相框。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
+缩略图取 `ThumbnailFrameTap` 每 0.5 秒拷下的一张位图：最近一帧已经转正、镜像和裁切过，缩到宽 160，不再引用相机缓冲。缩略图再取中间正方形。先把这一帧渲成小图，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `thumbnail`。已选那一款先渲，每 4 张交给界面一次。同一套 `CIContext` 一直复用。缩略图不加相框。面板打开时大约每 1 秒刷新这一排；上一轮没算完就跳过，不打断。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
 
 相框在 `GradeApplicator` 之后。预览和成片共用 `FrameCompositor`。底栏字图在主线程生成，`videoQueue` 只贴图。细节在 [frame.md](frame.md)。
 
 双摄不走上面这张单路图。两路各自转正、调色，由 `DualFrameComposer` 贴进同一张外框，再套相框。缩略图仍用选中那一路的单帧，不合成。细节在 [multicam.md](multicam.md)。
 
-## 两种方案怎么并存
+## 颜色方案怎么并存
 
-`LookGrade` 是扩展点。它是封闭枚举，编译器会要求 `GradeApplicator` 写全每个分支。
+`LookGrade` 是扩展点。它是封闭枚举，编译器会要求 `ColorGrader` 写全每个分支。方案只决定颜色从哪来，颜色之后的收尾所有款共用。
 
 ```mermaid
 flowchart TB
   look["Look"] --> grade{"LookGrade"}
   grade --> n["none<br/>原图"]
-  grade --> c["colorCube<br/>ColorCubeGrade<br/>立方体名、清晰度、颗粒、暗角"]
-  grade --> l["lutImage<br/>LUTImageGrade<br/>PNG 名、默认强度"]
-  c --> cg["ColorCubeGrader"]
-  l --> lg["LUTImageGrader"]
-  cg --> storeC["ColorCubeStore<br/>当前分类的立方体"]
-  lg --> storeL["LUTImageStore<br/>当前分类的 PNG"]
+  grade --> l["lut<br/>LUTGrade<br/>PNG 名、默认强度"]
+  grade --> b["builtIn<br/>BuiltInGrade<br/>Core Image 滤镜名"]
+  l --> store["LUTStore<br/>展开成 64³，最近 16 张"]
+  store --> cube["CIColorCubeWithColorSpace"]
+  b --> ci["CIFilter(name:)"]
 ```
 
-| 方案 | 资源 | 运行时还能调什么 |
+| 方案 | 资源 | 目录 |
 | --- | --- | --- |
-| `none` | 无 | 无 |
-| `colorCube` | `ColorCubes/<id>.acube`，目录在 `Looks.json` | 强度、褪色、清晰度、颗粒、暗角。光晕仅当目录 `halation > 0` |
-| `lutImage` | `LUTs/<name>.png`，目录在 `LUTLooks.json` | 强度、褪色。光晕仅当目录 `halation > 0`。默认强度是 `strength` |
+| `none` | 无 | 原图 |
+| `lut` | `FilmLUTs/film-<id>.png` 或 `LUTs/<name>.png` | `Looks.json`（胶片款，由导入脚本写）和 `LUTLooks.json` |
+| `builtIn` | 无 | `Looks.json` |
 
-强度混回原图在 `GradeApplicator`，两条路径共用。颜色之后先走 `FilmFinish`（肤色、影调、光晕），再由配方做清晰度、颗粒、暗角。界面用 `Look.adjustsSpatially` 决定后三根滑杆，用 `Look.showsHalation` 决定光晕。肩部和肤色留在目录里，不进面板。
+`LookFinish` 是目录里的褪色、光晕、颗粒、颗粒板和暗角默认值。`LookAdjustment.baseline` 从它和 `Look.strength` 得出第一次套上时的调节。所有非原图款的面板都是强度、褪色、颗粒、暗角，`Look.showsHalation` 为真时多一根光晕。
 
 调节后的数值按滤镜 id 记在 `CameraViewModel` 的内存字典里，不写磁盘。点保存才写入。收起或不保存就回到上次保存的值；没有保存过则回到默认。缩略图始终用默认参数，方便和改过的画面对照。
 
-再加一种方案时走这四步，预览、成片和缩略图的调用点不用改：
+再加一种颜色来源时走这三步，预览、成片和缩略图的调用点不用改：
 
 ```mermaid
 flowchart LR
-  step1["1. LookGrade 加 case"] --> step2["2. CameraPipeline 加 Grader"]
-  step2 --> step3["3. 资源和目录 JSON"]
-  step3 --> step4["4. GradeApplicator 加分支<br/>界面按 grade 决定滑杆"]
+  step1["1. LookGrade 加 case"] --> step2["2. ColorGrader 加分支"]
+  step2 --> step3["3. LookLibrary 认新的 grade 字符串"]
 ```
 
-Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeline。
+Domain 仍然不出现 `CIImage`。像素工作留在 CameraPipeline。
 
 ## Domain 类型
 
 | 类型 | 文件 | 职责 |
 | --- | --- | --- |
-| `Look`、`GrainPlateKind` | `AngieFilter/Domain/Looks/Look.swift` | 风格数据。空间参数从 `LookGrade` 读出 |
-| `LookFinish` | `AngieFilter/Domain/Looks/LookFinish.swift` | 目录里的褪色、肩部、光晕、肤色 |
-| `LookGrade`、`ColorCubeGrade`、`LUTImageGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜用哪条渲染方案 |
+| `Look`、`GrainPlateKind` | `AngieFilter/Domain/Looks/Look.swift` | 风格数据，以及第一次套上时的强度 |
+| `LookFinish` | `AngieFilter/Domain/Looks/LookFinish.swift` | 目录里的褪色、光晕、颗粒、暗角 |
+| `LookGrade`、`LUTGrade`、`BuiltInGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜的颜色从哪来 |
 | `LookFamily` | `AngieFilter/Domain/Looks/LookFamily.swift` | 分类。成员仍是 `Look` |
-| `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 先读 `Looks.json`，再接上 `LUTLooks.json`。配方文件缺失时只返回原图 |
+| `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 先读 `Looks.json`，再接上 `LUTLooks.json`。`Looks.json` 缺失时只返回原图，不认识的条目跳过 |
 | `AspectRatio`、`AspectCrop` | `AngieFilter/Domain/Capture/` | 画幅和转正之后的中心裁切 |
 | `ZoomStop`、`CameraStatus`、`CameraFacing`、`FlashMode`、`CameraAuthorization` | `AngieFilter/Domain/Capture/CameraControls.swift` | 界面消费的值 |
 | `RenderParameters`、`LookAdjustment`、`RenderQuality` | `AngieFilter/Domain/Rendering/RenderParameters.swift` | 跨队列的 `Sendable` 快照。`dual` 有值时是双摄 |
@@ -163,7 +156,7 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | `PhoneModelName` | `AngieFilter/Domain/Rendering/PhoneModelName.swift` | 机型标识到营销名 |
 | `PlaceCaption` | `AngieFilter/Domain/Rendering/PlaceCaption.swift` | 城市和区拼成底栏地点 |
 
-`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`frame`、`frameModelName`、`frameDate`、`framePlace`、`orientation`、`mirrorHorizontally`、`quality`（`preview` 或 `still`）、`dual`（双摄时的排列和两路滤镜，单摄为 nil）。
+`RenderParameters` 的字段：`aspectRatio`、`lookID`、`adjustment`、`frame`、`frameModelName`、`frameDate`、`framePlace`、`orientation`、`mirrorHorizontally`、`quality`（`preview`、`still` 或 `thumbnail`）、`dual`（双摄时的排列和两路滤镜，单摄为 nil）。
 
 ## CameraPipeline 类型
 
@@ -178,10 +171,8 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | `FrameCompositor` | `AngieFilter/CameraPipeline/Rendering/FrameCompositor.swift` |
 | `DualFrameComposer` | `AngieFilter/CameraPipeline/Rendering/DualFrameComposer.swift` |
 | `FrameCaptionKey`、`FrameCaptionCache`、`FrameCaptionRenderer` | `AngieFilter/CameraPipeline/Rendering/FrameCaption.swift` |
-| `ColorCubeGrader` | `AngieFilter/CameraPipeline/Rendering/ColorCubeGrader.swift` |
-| `LUTImageGrader` | `AngieFilter/CameraPipeline/Rendering/LUTImageGrader.swift` |
-| `ColorCubeStore` | `AngieFilter/CameraPipeline/Rendering/ColorCubeStore.swift` |
-| `LUTImageStore` | `AngieFilter/CameraPipeline/Rendering/LUTImageStore.swift` |
+| `ColorGrader` | `AngieFilter/CameraPipeline/Rendering/ColorGrader.swift` |
+| `LUTStore` | `AngieFilter/CameraPipeline/Rendering/LUTStore.swift` |
 | `GrainLibrary` | `AngieFilter/CameraPipeline/Rendering/GrainLibrary.swift` |
 | `PreviewMetalView` | `AngieFilter/CameraPipeline/Rendering/CoreImageFrameRenderer.swift` |
 | `PhotoLibraryStore`、`PhotoLibraryError` | `AngieFilter/CameraPipeline/Photos/PhotoLibraryStore.swift` |
@@ -202,7 +193,7 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 
 `CameraViewModel` 在主线程。它保存当前 `lookID`、分类、调节草稿、已保存的调节、滤镜面板和相框面板是否展开、`FrameSettings`、确认页照片、保存中、对焦框、缩略图。双摄打开时另记两路的滤镜、排列、小窗位置和选中的镜头；退出双摄时恢复进入前的单摄镜头和滤镜。设备状态由 `CameraStatus` 推上来，双摄期间只采用 `DualSessionController` 的状态。相框选择只留在这次启动的内存里。地点由 `PlaceReader` 读，解析出的字符串放进 `framePlace`。
 
-ViewModel 发意图：变焦、切换风格、调节、相框、快门、画幅、闪光灯、翻转、开关双摄和改排列。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。双摄时缩略图用选中那一路的最近一帧。
+ViewModel 发意图：变焦、切换风格、调节、相框、快门、画幅、闪光灯、翻转、开关双摄和改排列。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 用一个共用的 `CIContext`，并直接调用 `GradeApplicator.apply`。双摄时缩略图用选中那一路的最近一帧。
 
 ## 队列
 
@@ -230,4 +221,4 @@ flowchart LR
 
 协议曾经按角色设计过，用来在测试里换假实现：`CameraControlling`、`LookRendering`、`PhotoLibrarySaving`。这些协议没有进当前代码。界面持有具体的 `CameraSessionController` 和 `DualSessionController`，用 `onStatus`、`onPhoto`、`onFailure` 三个闭包回传。渲染入口是 `GradeApplicator.apply`。双摄合成入口是 `DualFrameComposer.compose`。存图入口是 `PhotoLibraryStore.save`。相册失败是 `PhotoLibraryError`。会话失败目前是字符串，经 `onFailure` 变成界面横幅。
 
-渲染方案用 `LookGrade` 的 case 区分，不用一组可替换的渲染协议。加方案时改枚举和分发，调用方保持一个入口。
+颜色来源用 `LookGrade` 的 case 区分，不用一组可替换的渲染协议。加来源时改枚举和分发，调用方保持一个入口。
