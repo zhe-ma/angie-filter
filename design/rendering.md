@@ -85,7 +85,7 @@ flowchart LR
 | 6 | `UInt16` 版本，当前是 2 |
 | 8 | Float16 RGB 顶点，小端，红变化最快。顶点个数 `65³`，每点 6 字节 |
 
-高光和色相会把通道推到 0 以下或 1 以上。`CIColorCube` 最后会把显示结果夹回 0...1，但插值必须用未夹紧的顶点，否则肩部会错。所以包里用 Float16，不用 8-bit。每款约 1.6MB，47 款约 77MB。加载时展开成 float RGBA，A 固定为 1，大约 4.4MB。`ColorCubeStore` 只保留最近使用的一张。
+高光和色相会把通道推到 0 以下或 1 以上。`CIColorCube` 最后会把显示结果夹回 0...1，但插值必须用未夹紧的顶点，否则肩部会错。所以包里用 Float16，不用 8-bit。每款约 1.6MB，47 款约 77MB。加载时展开成 float RGBA，A 固定为 1，大约 4.4MB。`ColorCubeStore` 保留最近 16 张，盖住当前分类和正在预览的那一款，避免缩略图刷新把预览挤掉。
 
 找不到文件、魔数不对、维度不是 65、版本不是 2 或长度不符时，立方体这一步退回输入图。清晰度、颗粒和暗角仍按目录执行。
 
@@ -126,7 +126,7 @@ flowchart TB
 
 块的位置从 PNG 左上角数。蓝 0 是左上第一块，从左到右、再从上到下。块内红轴从左到右，绿轴从上到下。采样点往里收半个像素，避免踩到相邻块的边上。
 
-`LUTImageStore` 按原字节加载，不做色彩空间转换，只缓存最近一张。图不是 512×512 时这一款退回输入图。`LUTImageGrader` 用 `CIKernel` 做上面的采样。强度不写进 kernel，免得和分发处的溶解做两次。
+`LUTImageStore` 按原字节加载，不做色彩空间转换，保留最近 16 张。图不是 512×512 时这一款退回输入图。`LUTImageGrader` 用 `CIKernel` 做上面的采样。内核建不起来时，用同一张 PNG 点采样成 64³ 立方体再查表，画面不会静默变回原图。强度不写进 kernel，免得和分发处的溶解做两次。
 
 `LUTLooks.json` 每条：
 
@@ -161,4 +161,4 @@ flowchart TB
 
 场景和五款配方验收标准在 [product.md](product.md)。达不到就改立方体和 `Looks.json` 里的空间参数。LUT 图的验收是：采样和 PNG 上对应格子一致，默认强度和目录里的 `strength` 一致。
 
-iPhone 13 上预览保持 30fps。旧帧丢掉。拍照的编码和套风格不要占住 `videoQueue`。预览 `CIContext` 复用；缩略图目前每次刷新另建一个 context。`ColorCubeStore` 和 `LUTImageStore` 都不同时展开全部资源。
+iPhone 13 上预览保持 30fps。旧帧丢掉。拍照的编码和套风格不要占住 `videoQueue`。预览 `CIContext` 复用；缩略图目前每次刷新另建一个 context。`ColorCubeStore` 和 `LUTImageStore` 各保留最近 16 份，不一次展开全部资源。

@@ -253,13 +253,15 @@ final class CameraViewModel: ObservableObject {
         guard filtersOpen, let source = session.currentThumbnailSource() else { return }
         thumbnailWork?.cancel()
         let looks = visibleLooks
-        let work = DispatchWorkItem {
+        var work: DispatchWorkItem?
+        work = DispatchWorkItem {
             let context = CIContext(options: [
                 .cacheIntermediates: false,
                 .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3) as Any
             ])
             var images: [Look.ID: UIImage] = [:]
             for look in looks {
+                if work?.isCancelled == true { return }
                 let graded = GradeApplicator.apply(
                     source,
                     look: look,
@@ -271,7 +273,7 @@ final class CameraViewModel: ObservableObject {
                 images[look.id] = UIImage(cgImage: cgImage)
             }
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard let self, work?.isCancelled == false else { return }
                 var merged = self.thumbnails
                 for (id, image) in images {
                     merged[id] = image
@@ -280,6 +282,8 @@ final class CameraViewModel: ObservableObject {
             }
         }
         thumbnailWork = work
-        DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        if let work {
+            DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        }
     }
 }

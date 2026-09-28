@@ -30,20 +30,32 @@ enum LUTImageGrader {
     """)
 
     static func apply(_ image: CIImage, grade: LUTImageGrade) -> CIImage {
-        guard let kernel,
-              let lut = LUTImageStore.shared.image(named: grade.imageName) else {
+        if let kernel, let lut = LUTImageStore.shared.image(named: grade.imageName) {
+            let extent = image.extent
+            if let graded = kernel.apply(
+                extent: extent,
+                roiCallback: { index, rect in
+                    index == 0 ? rect : lut.extent
+                },
+                arguments: [image, lut]
+            ) {
+                return graded.cropped(to: extent)
+            }
+        }
+        return applyLattice(image, name: grade.imageName)
+    }
+
+    /// Same 8×8 grid, sampled once into a 64³ cube when the kernel is unavailable.
+    private static func applyLattice(_ image: CIImage, name: String) -> CIImage {
+        guard let data = LUTImageStore.shared.latticeData(named: name),
+              let filter = CIFilter(name: "CIColorCubeWithColorSpace") else {
             return image
         }
-        let extent = image.extent
-        guard let graded = kernel.apply(
-            extent: extent,
-            roiCallback: { index, rect in
-                index == 0 ? rect : lut.extent
-            },
-            arguments: [image, lut]
-        ) else {
-            return image
-        }
-        return graded.cropped(to: extent)
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(LUTImageStore.latticeDimension, forKey: "inputCubeDimension")
+        filter.setValue(data, forKey: "inputCubeData")
+        filter.setValue(CGColorSpace(name: CGColorSpace.displayP3), forKey: "inputColorSpace")
+        filter.setValue(false, forKey: "inputExtrapolate")
+        return (filter.outputImage ?? image).cropped(to: image.extent)
     }
 }

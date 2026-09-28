@@ -21,7 +21,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private var status = CameraStatus()
     private var device: AVCaptureDevice?
     private var isConfigured = false
-    private var isDrawing = false
+    private let renderBusy = Locked(false)
 
     override init() {
         guard let metalDevice = MTLCreateSystemDefaultDevice() else {
@@ -122,16 +122,24 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let busy = renderBusy.with { flag -> Bool in
+            if flag { return true }
+            flag = true
+            return false
+        }
+        guard !busy else { return }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            renderBusy.with { $0 = false }
+            return
+        }
         let renderParameters = parameters.with { $0 }
         let source = FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
         latestSource.with { $0 = source }
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
+        let busyFlag = renderBusy
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isDrawing else { return }
-            self.isDrawing = true
-            self.previewView.draw(image: graded)
-            self.isDrawing = false
+            self?.previewView.draw(image: graded)
+            busyFlag.with { $0 = false }
         }
     }
 

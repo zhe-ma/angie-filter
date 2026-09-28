@@ -1,26 +1,42 @@
 import Foundation
 
 /// Loads a baked 65³ cube and expands it into the float buffer
-/// `CIColorCubeWithColorSpace` samples. One expanded cube is about 4.4MB,
-/// so only the most recently used look stays in memory.
+/// `CIColorCubeWithColorSpace` samples. One expanded cube is about 4.4MB.
+/// The cache holds a whole category so thumbnail refresh does not evict the live preview.
 final class ColorCubeStore: @unchecked Sendable {
     static let shared = ColorCubeStore()
     static let dimension = 65
 
     private let lock = NSLock()
-    private var cachedName: String?
-    private var cachedData: Data?
+    private var cache: [String: Data] = [:]
+    private var recent: [String] = []
+    private let capacity = 16
 
     func data(named name: String) -> Data? {
+        if let cached = stored(name) { return cached }
+        guard let expanded = Self.expand(named: name) else { return nil }
+        return remember(expanded, name: name)
+    }
+
+    private func stored(_ name: String) -> Data? {
         lock.lock()
         defer { lock.unlock() }
-        if cachedName == name, let cachedData {
-            return cachedData
+        guard let data = cache[name] else { return nil }
+        recent.removeAll { $0 == name }
+        recent.append(name)
+        return data
+    }
+
+    private func remember(_ data: Data, name: String) -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        cache[name] = data
+        recent.removeAll { $0 == name }
+        recent.append(name)
+        while recent.count > capacity {
+            cache.removeValue(forKey: recent.removeFirst())
         }
-        guard let expanded = Self.expand(named: name) else { return nil }
-        cachedName = name
-        cachedData = expanded
-        return expanded
+        return data
     }
 
     private static func expand(named name: String) -> Data? {

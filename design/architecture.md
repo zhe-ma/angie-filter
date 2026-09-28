@@ -108,8 +108,8 @@ flowchart TB
   grade --> l["lutImage<br/>LUTImageGrade<br/>PNG 名、默认强度"]
   c --> cg["ColorCubeGrader"]
   l --> lg["LUTImageGrader"]
-  cg --> storeC["ColorCubeStore<br/>最近一张 .acube"]
-  lg --> storeL["LUTImageStore<br/>最近一张 PNG"]
+  cg --> storeC["ColorCubeStore<br/>当前分类的立方体"]
+  lg --> storeL["LUTImageStore<br/>当前分类的 PNG"]
 ```
 
 | 方案 | 资源 | 运行时还能调什么 |
@@ -195,7 +195,7 @@ flowchart LR
 
 不用 actor 包住 `AVCaptureSession`。会话回调留在它自己的队列上。`onStatus`、`onPhoto`、`onFailure` 都回到主队列。
 
-预览忙时，`CameraSessionController` 用 `isDrawing` 丢掉还没画完的新帧。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。
+预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。
 
 ## 命名
 
