@@ -455,6 +455,19 @@
     "vignette" : 0
   },
   {
+    "about" : "电影宣传片。阴影偏青，肤色和灯光偏暖。",
+    "clarity" : 0.2,
+    "fade" : 0.06,
+    "grain" : 0.16,
+    "grainPlate" : "fine",
+    "halation" : 0.24,
+    "id" : "trailer",
+    "name" : "大片",
+    "shoulder" : 0.2,
+    "skin" : 0.15,
+    "vignette" : 0.4
+  },
+  {
     "about" : "GR 正片。街拍直出，略偏青，对比清楚。",
     "clarity" : 0.2,
     "fade" : 0.04,

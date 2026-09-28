@@ -8,7 +8,7 @@ AngieFilter/
   Domain/               值。只有 Foundation、CoreGraphics、ImageIO
     Capture/            画幅、变焦、闪光灯、朝向
     Looks/              滤镜目录和调节里用到的风格数据
-    Rendering/          跨队列快照、相框尺寸
+    Rendering/          跨队列快照、相框尺寸、双摄位置
   CameraPipeline/       AVFoundation、Core Image、Metal、PhotoKit、UIKit
     Capture/            相机会话
     Rendering/          调色、相框合成、预览

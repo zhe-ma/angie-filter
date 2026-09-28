@@ -30,6 +30,8 @@ struct Spec {
     var clarity: Float = 0
     var grain: Float = 0
     var vignette: Float = 0
+    /// Teal shadows and warm skin, baked into the cube. Only the trailer look uses this.
+    var splitTone = false
 
     var isOriginal: Bool { id == "original" }
 
@@ -95,6 +97,7 @@ let finishByID: [String: FinishSpec] = [
     "cs400d": FinishSpec(fade: 0.08, shoulder: 0.12),
     "v250d": FinishSpec(fade: 0.06, shoulder: 0.14, skin: 0.20),
     "v500t": FinishSpec(fade: 0.10, shoulder: 0.16, halation: 0.35),
+    "trailer": FinishSpec(fade: 0.06, shoulder: 0.20, halation: 0.24, skin: 0.15),
     "positive": FinishSpec(fade: 0.04, shoulder: 0.08),
     "negative": FinishSpec(fade: 0.16, shoulder: 0.12, skin: 0.20),
     "hibw": FinishSpec(fade: 0.08, shoulder: 0.12),
@@ -122,7 +125,8 @@ func spec(
     hue: Float = 0,
     clarity: Float = 0,
     grain: Float = 0,
-    vignette: Float = 0
+    vignette: Float = 0,
+    splitTone: Bool = false
 ) -> Spec {
     Spec(
         id: id,
@@ -136,7 +140,8 @@ func spec(
         hue: hue,
         clarity: clarity,
         grain: grain,
-        vignette: vignette
+        vignette: vignette,
+        splitTone: splitTone
     )
 }
 
@@ -180,6 +185,7 @@ let looks: [Spec] = [
     spec("cs400d", "400D", "Cinestill 400D。日光，颗粒介于 50D 和 800T 之间。", contrast: 1.04, saturation: 1.02, temperature: 5800, grain: 0.16),
     spec("v250d", "日光 250", "Vision3 250D。电影日光底片，肤色自然。", contrast: 1.04, saturation: 1.06, temperature: 6100, grain: 0.08),
     spec("v500t", "灯光 500", "Vision3 500T。钨丝灯电影底片。", contrast: 1.06, saturation: 0.92, temperature: 7600, hue: 8, grain: 0.14),
+    spec("trailer", "大片", "电影宣传片。阴影偏青，肤色和灯光偏暖。", contrast: 1.14, saturation: 1.06, temperature: 6000, clarity: 0.2, grain: 0.16, vignette: 0.4, splitTone: true),
 
     spec("positive", "正片", "GR 正片。街拍直出，略偏青，对比清楚。", contrast: 1.16, saturation: 1.12, hue: 6, clarity: 0.2),
     spec("negative", "负片", "GR 负片。更软，略暖。", contrast: 0.94, saturation: 0.96, temperature: 5800, grain: 0.1),
@@ -409,6 +415,73 @@ func applyColor(_ image: CIImage, _ look: Spec) -> CIImage {
         graded = graded.applyingFilter("CIHueAdjust", parameters: [
             kCIInputAngleKey: look.hue * Float.pi / 180
         ])
+    }
+    if look.splitTone {
+        graded = trailerSplit(graded)
+    }
+    return graded.cropped(to: image.extent)
+}
+
+/// Shadows and sky toward teal, orange skin and highlights toward warm. Small on purpose.
+private let trailerSplitKernel: CIColorKernel? = CIColorKernel(source: """
+kernel vec4 trailerSplit(__sample pixel) {
+    vec3 color = pixel.rgb;
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    float maxChannel = max(color.r, max(color.g, color.b));
+    float minChannel = min(color.r, min(color.g, color.b));
+    float delta = maxChannel - minChannel;
+    float hue = 0.0;
+    if (delta > 0.0001) {
+        if (maxChannel == color.r) {
+            hue = (color.g - color.b) / delta;
+            if (hue < 0.0) { hue = hue + 6.0; }
+        } else if (maxChannel == color.g) {
+            hue = (color.b - color.r) / delta + 2.0;
+        } else {
+            hue = (color.r - color.g) / delta + 4.0;
+        }
+        hue = hue * 60.0;
+    }
+    float colorful = smoothstep(0.04, 0.12, delta);
+    float redDistance = min(abs(hue), abs(hue - 360.0));
+    float red = colorful * (1.0 - smoothstep(10.0, 28.0, redDistance));
+    float orange = colorful * (1.0 - smoothstep(10.0, 26.0, abs(hue - 26.0)));
+    float green = colorful * (1.0 - smoothstep(16.0, 42.0, abs(hue - 125.0)));
+    float blue = colorful * (1.0 - smoothstep(16.0, 46.0, abs(hue - 215.0)));
+    float shadow = 1.0 - smoothstep(0.16, 0.52, luma);
+    float highlight = smoothstep(0.58, 0.90, luma);
+
+    vec3 result = color;
+    float shadowAmount = 0.08 * shadow * (1.0 - max(orange, red));
+    result.r = result.r - shadowAmount * 0.45;
+    result.g = result.g + shadowAmount * 0.16;
+    result.b = result.b + shadowAmount * 0.38;
+
+    float blueAmount = 0.12 * blue;
+    result.r = result.r - blueAmount * 0.26;
+    result.g = result.g + blueAmount * 0.20;
+
+    float greenAmount = 0.22 * green;
+    result.r = result.r - greenAmount * 0.06;
+    result.b = result.b + greenAmount * 0.42;
+
+    float orangeAmount = 0.08 * orange * (1.0 - red * 0.75);
+    result.r = result.r + orangeAmount * 0.16;
+    result.b = result.b - orangeAmount * 0.22;
+
+    float highlightAmount = 0.05 * highlight * (1.0 - blue * 0.75) * (1.0 - orange * 0.8);
+    result.r = result.r + highlightAmount * 0.28;
+    result.b = result.b - highlightAmount * 0.24;
+
+    return vec4(result, pixel.a);
+}
+""")
+
+func trailerSplit(_ image: CIImage) -> CIImage {
+    guard let trailerSplitKernel,
+          let graded = trailerSplitKernel.apply(extent: image.extent, arguments: [image]) else {
+        fputs("大片分色内核没有建起来\n", stderr)
+        exit(1)
     }
     return graded.cropped(to: image.extent)
 }

@@ -62,7 +62,7 @@ enum LookLibrary {
         ("leica", "徕卡", ["natural", "classic", "bright", "mono"]),
         ("fuji", "富士", ["standard", "vivid", "soft", "chrome", "neg", "nostalgia", "real", "cinema", "bleach", "portrait", "portrait-hi", "acros", "pro400h", "superia"]),
         ("kodak", "柯达", ["portra160", "portra400", "portra800", "gold", "ektar", "ultramax", "colorplus", "kodachrome", "ektachrome", "trix", "tmax"]),
-        ("cinema", "电影", ["cs800t", "cs50d", "cs400d", "v250d", "v500t"]),
+        ("cinema", "电影", ["cs800t", "cs50d", "cs400d", "v250d", "v500t", "trailer"]),
         ("ricoh", "理光", ["positive", "negative", "hibw"]),
         ("hasselblad", "哈苏", ["hncs"]),
         ("ilford", "依尔福", ["hp5", "delta", "fp4", "xp2"]),

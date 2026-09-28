@@ -1,6 +1,6 @@
 # 采集
 
-采集在 `CameraSessionController`。预览画到 `MTKView`（`PreviewMetalView`），不用 `AVCaptureVideoPreviewLayer`。工作色彩空间是 Display P3：`CIContext` 的 `workingColorSpace`，以及色彩立方体滤镜的 `inputColorSpace`，都是 Display P3。LUT 图按原字节采样，不在采集这一层做转换。渲染怎么套风格见 [rendering.md](rendering.md)。
+采集在 `CameraSessionController`。双摄另走 `DualSessionController`，见 [multicam.md](multicam.md)。预览画到 `MTKView`（`PreviewMetalView`），不用 `AVCaptureVideoPreviewLayer`。工作色彩空间是 Display P3：`CIContext` 的 `workingColorSpace`，以及色彩立方体滤镜的 `inputColorSpace`，都是 Display P3。LUT 图按原字节采样，不在采集这一层做转换。渲染怎么套风格见 [rendering.md](rendering.md)。
 
 ```mermaid
 flowchart TB
@@ -78,9 +78,9 @@ flowchart TB
 
 对焦从裁切后的取景框换算回传感器，同时设 `focusPointOfInterest`（`.autoFocus`）和 `exposurePointOfInterest`（`.autoExpose`）。
 
-当前实现把点击位置归一化到预览视图，再做竖屏轴交换：后置 `(x: y, y: 1 - x)`，前置 `(x: y, y: x)`。这一步还没有按裁切矩形的内边距回推到传感器。点画面时如果滤镜面板开着，会先收起面板再对焦。对焦框约 0.9 秒后消失。
+当前实现把点击位置归一化到预览视图，再做竖屏轴交换：后置 `(x: y, y: 1 - x)`，前置 `(x: y, y: x)`。单摄这一步还没有按裁切矩形的内边距回推到传感器。双摄先把点击映射进那一路的格子，再用 `DualFocusMap` 按格子的宽高比补上裁切边距。点画面时如果滤镜面板开着，会先收起面板再对焦。拖动画中画或圆窗松手后不对焦。对焦框约 0.9 秒后消失。
 
-闪光灯只在后置循环：关、开、自动。拍照时映射到 `AVCaptureDevice.FlashMode`，设备不支持的模式不写入 `AVCapturePhotoSettings`。前置按钮禁用。
+闪光灯只作用于后置：关、开、自动。单摄时前置按钮禁用。双摄里按钮仍可点，闪光只写进后置那一路的 `AVCapturePhotoSettings`。设备不支持的模式不写入。
 
 ## 保存
 
@@ -90,9 +90,14 @@ flowchart TB
 2. 优先 HEIC（`public.heic`，质量 0.92），失败则 JPEG 0.92
 3. `PHAssetCreationRequest.forAsset()` 追加照片资源
 
-不创建相册。成功后回到取景，横幅「已保存到最近项目」。失败横幅「保存失败，可以再试一次」。重拍只清掉确认页图片，风格、画幅和变焦留在取景状态里。
+不创建相册。成功后回到取景，横幅「已保存到最近项目」。失败横幅「保存失败，可以再试一次」。重拍只清掉确认页图片。单摄的风格、画幅和变焦留着。双摄重拍回到双摄，排列和两套滤镜留着。
 
-Info.plist 由构建设置生成，只声明相机和「仅添加照片」：
+Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框地点：
 
 - `NSCameraUsageDescription`
 - `NSPhotoLibraryAddUsageDescription`
+- `NSLocationWhenInUseUsageDescription`：地点只在相框打开地点开关时使用
+
+## 双摄
+
+单摄继续用上面的 `AVCaptureSession` 和虚拟相机。点「双摄」后先停掉它，再启动 `AVCaptureMultiCamSession`。退出时反过来。预览视图不换。两路先各自调色，合成后再套相框。成片在双摄自己的 `CIContext` 里导出，不占用预览那一个 context。模拟器 `isMultiCamSupported` 为 false，顶栏没有这个按钮。

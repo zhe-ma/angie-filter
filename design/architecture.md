@@ -20,7 +20,7 @@ flowchart TB
   pipeline --> domain
 ```
 
-当前组合根很薄：`AngieFilter/App/AngieFilterApp.swift` 只放上 `CameraView`。`CameraViewModel` 自己创建 `CameraSessionController`。
+当前组合根很薄：`AngieFilter/App/AngieFilterApp.swift` 只放上 `CameraView`。`CameraViewModel` 自己创建 `CameraSessionController` 和 `DualSessionController`，同一时间只让其中一个 `startRunning`。预览仍是单摄创建的那一个 `PreviewMetalView`。
 
 风格是数据，渲染节点留在 CameraPipeline，因为入参是 `CIImage`。`Look.grade` 只描述用哪条方案和它的资源，不持有滤镜对象。
 
@@ -104,6 +104,8 @@ flowchart TB
 缩略图取最近一帧已经转正、镜像和裁切过的源图，缩到宽 160，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `preview`。缩略图不加相框。面板打开时大约每 0.6 秒刷新这一排。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
 
 相框在 `GradeApplicator` 之后。预览和成片共用 `FrameCompositor`。底栏字图在主线程生成，`videoQueue` 只贴图。细节在 [frame.md](frame.md)。
+
+双摄不走上面这张单路图。两路各自转正、调色，由 `DualFrameComposer` 贴进同一张外框，再套相框。缩略图仍用选中那一路的单帧，不合成。细节在 [multicam.md](multicam.md)。
 
 ## 两种方案怎么并存
 
@@ -194,12 +196,13 @@ Domain 仍然不出现 `CIImage`。新 grader 的像素工作留在 CameraPipeli
 | --- | --- |
 | `CameraView` | `AngieFilter/Features/Camera/CameraView.swift` |
 | `CameraViewModel` | `AngieFilter/Features/Camera/CameraViewModel.swift` |
+| `PlaceReader` | `AngieFilter/Features/Camera/PlaceReader.swift` |
 | `FilterStripView` | `AngieFilter/Features/Camera/FilterStripView.swift` |
 | `ReviewView` | `AngieFilter/Features/Review/ReviewView.swift` |
 
-`CameraViewModel` 在主线程。它保存当前 `lookID`、分类、调节草稿、已保存的调节、滤镜面板和相框面板是否展开、`FrameSettings`、确认页照片、保存中、对焦框、缩略图。设备状态由 `CameraStatus` 推上来。相框选择只留在这次启动的内存里。地点由 `PlaceReader` 读，解析出的字符串放进 `framePlace`。
+`CameraViewModel` 在主线程。它保存当前 `lookID`、分类、调节草稿、已保存的调节、滤镜面板和相框面板是否展开、`FrameSettings`、确认页照片、保存中、对焦框、缩略图。双摄打开时另记两路的滤镜、排列、小窗位置和选中的镜头；退出双摄时恢复进入前的单摄镜头和滤镜。设备状态由 `CameraStatus` 推上来，双摄期间只采用 `DualSessionController` 的状态。相框选择只留在这次启动的内存里。地点由 `PlaceReader` 读，解析出的字符串放进 `framePlace`。
 
-ViewModel 发意图：变焦、切换风格、调节、相框、快门、画幅、闪光灯、翻转。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。
+ViewModel 发意图：变焦、切换风格、调节、相框、快门、画幅、闪光灯、翻转、开关双摄和改排列。它不配置 `AVCaptureSession`。缩略图刷新是当前的例外：`CameraViewModel.refreshThumbnails()` 自己建了一个 `CIContext`，并直接调用 `GradeApplicator.apply`。双摄时缩略图用选中那一路的最近一帧。
 
 ## 队列
 
@@ -217,7 +220,7 @@ flowchart LR
 
 不用 actor 包住 `AVCaptureSession`。会话回调留在它自己的队列上。`onStatus`、`onPhoto`、`onFailure` 都回到主队列。
 
-预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。
+预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。双摄用自己的 `angie.camera.dual.session`、`angie.camera.dual.video` 和 `angie.camera.dual.photo`。合成忙时合并成下一次绘制，不让后置的忙挡住前置更新最近一帧。两套会话不同时 `startRunning`。
 
 ## 命名
 
@@ -225,6 +228,6 @@ flowchart LR
 
 不用 Manager、Helper、Engine，也不做 Coordinator、Rx、服务定位器、`Base`、`Utils`。两个页面用 SwiftUI 切换 `reviewImage`，不做路由框架。
 
-协议曾经按角色设计过，用来在测试里换假实现：`CameraControlling`、`LookRendering`、`PhotoLibrarySaving`。这些协议没有进当前代码。界面持有具体的 `CameraSessionController`，用 `onStatus`、`onPhoto`、`onFailure` 三个闭包回传。渲染入口是 `GradeApplicator.apply`。存图入口是 `PhotoLibraryStore.save`。相册失败是 `PhotoLibraryError`。会话失败目前是字符串，经 `onFailure` 变成界面横幅。
+协议曾经按角色设计过，用来在测试里换假实现：`CameraControlling`、`LookRendering`、`PhotoLibrarySaving`。这些协议没有进当前代码。界面持有具体的 `CameraSessionController` 和 `DualSessionController`，用 `onStatus`、`onPhoto`、`onFailure` 三个闭包回传。渲染入口是 `GradeApplicator.apply`。双摄合成入口是 `DualFrameComposer.compose`。存图入口是 `PhotoLibraryStore.save`。相册失败是 `PhotoLibraryError`。会话失败目前是字符串，经 `onFailure` 变成界面横幅。
 
 渲染方案用 `LookGrade` 的 case 区分，不用一组可替换的渲染协议。加方案时改枚举和分发，调用方保持一个入口。

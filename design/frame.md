@@ -72,7 +72,7 @@ AngieFilter 的边距、底栏高度和字体写在下面，是这一版的规�
 flowchart TB
   camera[取景]
   camera -->|点左侧相框| framePanel[相框面板]
-  framePanel -->|关闭 / 留白 / 暗房 / 拍立得 / 印记| camera
+  framePanel -->|关闭 / 留白 / 暗房 / 相纸 / 窗线 / 角标 / 压底 / 拍立得 / 印记| camera
   camera -->|点右侧滤镜| filterPanel[滤镜面板]
   filterPanel --> camera
   camera -->|快门| review[确认页]
@@ -80,14 +80,14 @@ flowchart TB
   review -->|保存| photos[最近项目]
 ```
 
-快门条现在是：左侧滤镜名，中间快门，右侧「滤镜」。这一版在快门左侧加「相框」。两个面板都收起、且当前滤镜有名称时，名称跟在「相框」后面，空间不够就省略尾部。任一面板展开时，左侧只留「相框」，名称仍在滤镜面板的标题上。当前是原图且面板收起时，左侧也只有「相框」。
+快门条左侧是「相框」，中间是快门，右侧是「滤镜」。双摄时，「相框」旁边显示当前选中的是后置还是前置。两个面板都收起、且当前滤镜有名称时，名称跟在「相框」后面，空间不够就省略尾部。任一面板展开时，左侧只留「相框」。当前是原图且面板收起时，左侧也只有「相框」。
 
 面板出现在预览和快门条之间，和滤镜面板同一个位置。一次只展开一个。点「相框」时若滤镜面板开着，先收起滤镜。点「滤镜」时若相框面板开着，先收起相框。再点同一个按钮，面板收起。点画面也收起当前面板。点在照片内容上时，收起之后仍对焦，和现在点画面收滤镜一样。点在相框边上只收起面板，不对焦。相框边没有对应的传感器位置。
 
 相框面板里的操作：
 
-1. 五选一：关闭、留白、暗房、拍立得、印记。点下去预览立刻变。芯片放不下就横滑。
-2. 「拍立得」和「印记」展开四个控件：型号开关、地点开关、日期开关、一行输入。输入提示是「一行短句」。回车收起键盘。
+1. 九选一：关闭、留白、暗房、相纸、窗线、角标、压底、拍立得、印记。点下去预览立刻变。芯片放不下就横滑。
+2. 角标、压底、拍立得、印记展开四个控件：型号开关、地点开关、日期开关、一行输入。输入提示是「一行短句」。回车收起键盘。
 3. 自定义最多 12 个字素。超出的在输入时截掉。只含空白的文本当成空。
 4. 地点默认关。打开时才向系统要「使用期间」的位置。拒绝或还没解析出地名时，底栏不印地点，面板上写「未获得位置」。这句不进照片。
 
@@ -102,12 +102,15 @@ flowchart TB
 | 关闭 | 没有边 |
 | 留白 | 四周等宽白卡纸，没有字 |
 | 暗房 | 四周等宽黑底，没有字 |
-| 拍立得或印记，型号、地点、日期、自定义都关 | 底栏留白。外框仍是该样式自己的尺寸 |
-| 只开其中几项 | 底栏里只画打开的那几段 |
+| 相纸 | 四周等宽暖底，没有字 |
+| 窗线 | 照片比例不变，内侧一圈白线 |
+| 角标或压底，字都关 | 照片比例不变，不印字 |
+| 拍立得或印记，字都关 | 底栏留白。外框仍是该样式自己的尺寸 |
+| 能印字的样式，只开其中几项 | 只画打开的那几段 |
 
 前置摄像头：照片内容保持现在的镜像，和取景一致。型号、地点、日期、自定义画在镜像之后，字是正的。
 
-画幅 4:3、16:9、1:1 都按当前这一档外扩。相框加在裁切之后的照片外面，照片像素不裁掉。取景区域的宽高比改成外框的宽高比，边才能完整出现在 `PreviewMetalView` 里。相框关闭时，取景区域回到现在的画幅比例。变焦条贴在照片内容的底边，停在底栏上方，不压住字。
+画幅 4:3、16:9、1:1 都先裁切，再套相框，照片内容不因相框被裁掉。留白、暗房、相纸、拍立得、印记会把取景宽高比改成外框。窗线、角标、压底不改变照片比例。相框关闭时，取景区域回到画幅比例。有外扩底栏时，变焦条停在底栏上方，不压住字。
 
 ## 技术方案
 
@@ -119,28 +122,30 @@ flowchart TB
   geo --> grade["GradeApplicator<br/>立方体或 LUT，再按强度溶解"]
   grade --> frame{FrameStyle}
   frame -->|off| out[预览 / 确认页 UIImage / 保存]
-  frame -->|white 或 captioned| canvas["FrameCompositor<br/>白画布外扩"]
-  canvas --> glyphs[贴上已经排好的一行字]
+  frame -->|留白、暗房、相纸、拍立得、印记| canvas["FrameCompositor<br/>外扩画布"]
+  frame -->|窗线、角标、压底| overlay["盖在照片上"]
+  canvas --> glyphs[需要时贴上一行字]
+  overlay --> glyphs
   glyphs --> out
 ```
 
-预览在 `CameraSessionController` 里，`FrameImageMaker.graded` 之后、`previewView.draw` 之前进入 `FrameCompositor`。成片在同一处的 `graded` 之后、`previewView.makeImage` 之前进入。两条都读同一份 `RenderParameters` 快照。缩略图继续用裁切后的源图加 `GradeApplicator`，不经过相框。
+单摄预览在 `CameraSessionController` 里，`FrameImageMaker.graded` 之后、`previewView.draw` 之前进入 `FrameCompositor`。成片在同一处的 `graded` 之后、`previewView.makeImage` 之前进入。双摄先由 `DualFrameComposer` 合成，再进同一个相框。两条都读同一份 `RenderParameters` 快照。缩略图继续用裁切后的源图加 `GradeApplicator`，不经过相框，也不合成双摄。
 
 ### 数据
 
-`FrameStyle`：`off`、`white`、`black`、`instant`、`captioned`。
+`FrameStyle`：`off`、`white`、`black`、`paper`、`window`、`stamp`、`scrim`、`instant`、`captioned`。
 
 `FrameSettings` 放在 `AngieFilter/Domain/Rendering/`，`Equatable`、`Sendable`：
 
 | 字段 | 含义 |
 | --- | --- |
-| `style` | 关闭、留白、暗房、拍立得、印记。默认 `off` |
-| `showsModel` | 型号开关。只在拍立得和印记时画出来 |
-| `showsPlace` | 地点开关。只在拍立得和印记时画出来。默认关 |
-| `showsDate` | 日期开关。只在拍立得和印记时画出来 |
+| `style` | 关闭、留白、暗房、相纸、窗线、角标、压底、拍立得、印记。默认 `off` |
+| `showsModel` | 型号开关。只在角标、压底、拍立得、印记时画出来 |
+| `showsPlace` | 地点开关。只在这四种样式时画出来。默认关 |
+| `showsDate` | 日期开关。只在这四种样式时画出来 |
 | `customText` | 一行短文本。空则不画 |
 
-从「印记」或「拍立得」切到别的样式时，开关和自定义文本留在结构体里。再切回来，刚才的字还在。
+从能印字的样式切走时，开关和自定义文本留在结构体里。再切回来，刚才的字还在。
 
 `RenderParameters` 增加 `frame: FrameSettings`。它和画幅、滤镜、方向一起放进现有的 `Locked` 快照。`videoQueue` 只读这份值。相框不写进 `Look`，也不写进 `LookGrade`。
 
@@ -157,15 +162,15 @@ flowchart TB
 | 印记 | `0.045 × S` | `0.045 × S` | `0.11 × S` |
 | 拍立得 | `0.055 × S` | `0.055 × S` | `0.20 × S` |
 
-开关字不改变这一档的像素尺寸。字号按短边的 3.1% 算，拍立得和印记一样大，在底栏里垂直居中。
+开关字不改变这一档的像素尺寸。外扩底栏的字号是短边的 3.1%，角标和压底是短边的 2.6%。
 
 取景约束用这一档的外框比例。印记的 4:3 竖图外框比照片略高，高出来的是底栏。拍立得底边更宽，外框更高。留白和暗房四周等宽，外框接近照片比例。
 
-合成用 `CIImage`：留白、拍立得、印记铺白底，暗房铺黑底。照片贴在边内，拍立得和印记再贴字图。预览和成片继续走现有的 `CIContext`。
+合成用 `CIImage`。留白、拍立得、印记铺白底，暗房铺黑底，相纸铺 `(0.96, 0.93, 0.86)`。窗线、角标、压底不扩大画布。窗线是内侧白线。角标和压底把浅色字盖在画面底部，压底另有一条从透明到黑的渐变。预览和成片继续走现有的 `CIContext`。
 
 ### 字
 
-一行，系统字体，字重 medium。字号 = `0.031 × S`。颜色是黑，不透明度 0.82。底栏左右内边距等于这一档的左边宽，字在底栏内垂直居中。留白和暗房不写字。
+一行，系统字体，字重 medium。外扩底栏字号 = `0.031 × S`，黑色，不透明度 0.82，在底栏里垂直居中。角标和压底字号 = `0.026 × S`，白色，不透明度 0.92，并带一点阴影。压底的字靠近暗带下沿。留白、暗房、相纸、窗线不写字。
 
 从左到右最多四段：型号靠左，地点挨着型号，自定义在中间，日期靠右。关掉或为空的那一段不占位。只剩自定义时，在底栏内水平居中。中间那段放不下就截断，并加省略号。地点放不下时同样截断，不挤掉日期。
 
@@ -189,7 +194,7 @@ flowchart TB
 | 巴黎，区为空 | 巴黎 |
 | 市和区都空 | 不印 |
 
-读取在界面层，用 `CLLocationManager`，精度 `kCLLocationAccuracyHundredMeters`，权限是使用期间。只有地点开关打开、并且当前样式是拍立得或印记时才开始更新，关掉就停。位移超过约 300 米，或距上次解析超过约 2 分钟，才做一次 `CLGeocoder` 逆地理。地名没变就不重画字图。
+读取在界面层，用 `CLLocationManager`，精度 `kCLLocationAccuracyHundredMeters`，权限是使用期间。只有地点开关打开、并且当前样式能印字时才开始更新，关掉就停。位移超过约 300 米，或距上次解析超过约 2 分钟，才做一次 `CLGeocoder` 逆地理。地名没变就不重画字图。
 
 预览用最近一次解析出的字符串。还没有结果时不印「定位中」。快门把当时的字符串冻进那张成片，和日期一样。`RenderParameters` 增加 `framePlace`。排版规则放在 Domain 的纯函数里，入参是已经解析好的城市和区，Domain 不 import Core Location。CameraPipeline 只把这个字符串画进底栏。
 
@@ -203,7 +208,7 @@ Info.plist 增加 `NSLocationWhenInUseUsageDescription`：说明位置只用来�
 
 ## 默认值和记忆
 
-默认 `FrameStyle.off`。型号开关和日期开关的初始值是开，地点开关是关，自定义文本是空。这三项只在用户选了拍立得或印记之后才画到画面上。第一次打开，画面上没有相框。地点保持关闭，避免一进相框就弹出位置权限。
+默认 `FrameStyle.off`。型号开关和日期开关的初始值是开，地点开关是关，自定义文本是空。字只在角标、压底、拍立得、印记上画。第一次打开，画面上没有相框。地点保持关闭，避免一进相框就弹出位置权限。
 
 `CameraViewModel` 把 `FrameSettings` 留在这次启动的内存里，不写 UserDefaults，也不另存配置文件。和滤镜调节一样，杀掉进程再打开就回到默认。点选项立刻进入预览和下一张快照。相框面板里不放单独的保存按钮。
 
@@ -218,9 +223,9 @@ Info.plist 增加 `NSLocationWhenInUseUsageDescription`：说明位置只用来�
 - `FrameStyle`、`FrameSettings`、`FrameLayout`、`FrameDateText` 在 `FrameSettings.swift`
 - `PlaceCaption` 把城市和区拼成底栏字符串。`PlaceReader` 在界面层读位置并做逆地理
 - `PhoneModelName` 把机型标识换成营销名
-- `FrameCompositor` 按样式贴白底或黑底，`FrameCaptionRenderer` 在主线程画字，`FrameCaptionCache` 留最近两张
+- `FrameCompositor` 外扩或盖线、角标、压底。`FrameCaptionRenderer` 在主线程画字，`FrameCaptionCache` 留最近两张
 - `DeviceMachine` 在会话里读一次 `utsname`
-- `CameraSessionController` 在 `graded` 之后套相框。预览的字图异步生成，成片在快门线程上同步生成。按下快门时冻结日期和当时的地点
+- 单摄在 `CameraSessionController` 里、双摄在合成之后套相框。预览的字图异步生成，成片同步生成。按下快门时冻结日期和当时的地点
 - `CameraView` 左侧是「相框」。取景宽高比在相框打开时改成外框。对焦只认照片内容
 
 可点击的对照在 `design/interaction.html`。类型总表在 [code-map.md](code-map.md)。

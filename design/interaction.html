@@ -801,7 +801,8 @@ const catalog = [
     stock("cs50d", "50D", "saturate(1.06) contrast(1.02) sepia(0.08) brightness(1.04)", 0.06, 0.06, "Cinestill 50D。日光电影卷，干净，略暖。"),
     stock("cs400d", "400D", "saturate(1.02) contrast(1.04) sepia(0.12) brightness(1.03)", 0.16, 0.1, "Cinestill 400D。日光，颗粒介于 50D 和 800T 之间。"),
     stock("v250d", "日光 250", "saturate(1.08) contrast(1.05) sepia(0.06) brightness(1.02)", 0.08, 0, "Vision3 250D。电影日光底片，肤色自然。"),
-    stock("v500t", "灯光 500", "saturate(0.92) contrast(1.06) hue-rotate(14deg) brightness(0.98)", 0.14, 0.12, "Vision3 500T。钨丝灯电影底片，比 800T 更干净。")
+    stock("v500t", "灯光 500", "saturate(0.92) contrast(1.06) hue-rotate(14deg) brightness(0.98)", 0.14, 0.12, "Vision3 500T。钨丝灯电影底片，比 800T 更干净。"),
+    stock("trailer", "大片", "contrast(1.14) saturate(1.08) sepia(0.16) hue-rotate(-8deg)", 0.16, 0.18, "电影宣传片。阴影偏青，肤色和灯光偏暖。")
   ]},
   { id: "ricoh", name: "理光", looks: [
     stock("positive", "正片", "contrast(1.18) saturate(1.14) hue-rotate(8deg) brightness(0.99)", 0, 0, "GR 正片。街拍直出，略偏青，对比清楚。"),
@@ -891,7 +892,7 @@ const hints = {
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
     "上面点分类，只换下面这一排；原图单独在最前",
     "缩略图都是当前画面，点一下立即套用",
-    "点「调节」或再点一次已选滤镜，改强度和褪色。配方还有清晰度、颗粒、暗角。光晕只在 800T、灯光 500 和新锐「电影」上出现",
+    "点「调节」或再点一次已选滤镜，改强度和褪色。配方还有清晰度、颗粒、暗角。光晕只在 800T、灯光 500、大片和新锐「电影」上出现",
     "点 0.5、1、2 变焦，或在画面上滚动滚轮",
     "点中间的比例，在 4:3、16:9、1:1 之间切换",
     "闪光灯只在后置可用，按 关、开、自动 循环",
@@ -964,7 +965,7 @@ const finish = {
   acros: [5, 0], pro400h: [16, 0], superia: [14, 0],
   portra160: [12, 0], portra400: [14, 0], portra800: [16, 0], gold: [16, 0], ektar: [4, 0],
   ultramax: [14, 0], colorplus: [16, 0], kodachrome: [6, 0], ektachrome: [4, 0], trix: [6, 0], tmax: [3, 0],
-  cs800t: [8, 35], cs50d: [6, 0], cs400d: [8, 0], v250d: [6, 0], v500t: [10, 35],
+  cs800t: [8, 35], cs50d: [6, 0], cs400d: [8, 0], v250d: [6, 0], v500t: [10, 35], trailer: [6, 24],
   positive: [4, 0], negative: [16, 0], hibw: [8, 0], hncs: [3, 0],
   hp5: [8, 0], delta: [4, 0], fp4: [6, 0], xp2: [5, 0], sx70: [20, 0], p600: [18, 0],
   canon: [2, 0], nikon: [2, 0], sony: [2, 0],
