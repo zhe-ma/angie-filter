@@ -120,12 +120,20 @@ struct CameraView: View {
 
     private var framePanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                frameStyleButton("关闭", style: .off)
-                frameStyleButton("白边", style: .white)
-                frameStyleButton("白边带字", style: .captioned)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    frameStyleButton("关闭", style: .off)
+                    frameStyleButton("留白", style: .white)
+                    frameStyleButton("暗房", style: .black)
+                    frameStyleButton("相纸", style: .paper)
+                    frameStyleButton("窗线", style: .window)
+                    frameStyleButton("角标", style: .stamp)
+                    frameStyleButton("压底", style: .scrim)
+                    frameStyleButton("拍立得", style: .instant)
+                    frameStyleButton("印记", style: .captioned)
+                }
             }
-            if model.frame.style == .captioned {
+            if model.frame.allowsCaption {
                 HStack(spacing: 16) {
                     frameToggle("型号", on: model.frame.showsModel) { model.setShowsModel($0) }
                     frameToggle("地点", on: model.frame.showsPlace) { model.setShowsPlace($0) }

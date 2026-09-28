@@ -95,7 +95,7 @@ flowchart TB
   rest --> mix
   mix --> border{"相框打开?"}
   border -->|否| out["预览 MTKView / 确认页 UIImage"]
-  border -->|是| frameOut["FrameCompositor 白边，带字时贴底栏"]
+  border -->|是| frameOut["FrameCompositor 外扩或盖在照片上"]
   frameOut --> out
 ```
 

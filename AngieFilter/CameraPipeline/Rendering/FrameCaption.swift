@@ -10,6 +10,8 @@ struct FrameCaptionKey: Equatable, Sendable {
     var barHeight: Int
     var inset: Int
     var fontSize: Int
+    var lightText: Bool
+    var scrim: Bool
 }
 
 /// Keeps the last two caption bitmaps so preview and still widths do not evict each other.
@@ -37,7 +39,7 @@ final class FrameCaptionCache: @unchecked Sendable {
 /// Draws the bottom caption on the main thread. `videoQueue` only pastes the result.
 enum FrameCaptionRenderer {
     static func key(layout: FrameLayout, parameters: RenderParameters) -> FrameCaptionKey? {
-        guard parameters.frame.style == .captioned else { return nil }
+        guard parameters.frame.allowsCaption else { return nil }
         let settings = parameters.frame
         let model = settings.showsModel ? parameters.frameModelName : ""
         let place = settings.showsPlace ? parameters.framePlace : ""
@@ -52,7 +54,9 @@ enum FrameCaptionRenderer {
             barWidth: Int(layout.canvas.width.rounded()),
             barHeight: Int(layout.captionBarHeight.rounded()),
             inset: Int(layout.horizontalInset.rounded()),
-            fontSize: Int(layout.fontSize.rounded())
+            fontSize: Int(layout.fontSize.rounded()),
+            lightText: settings.style.lightCaption,
+            scrim: settings.style == .scrim
         )
     }
 
@@ -65,19 +69,38 @@ enum FrameCaptionRenderer {
             size: CGSize(width: key.barWidth, height: key.barHeight),
             format: format
         )
-        let uiImage = renderer.image { _ in
-            draw(key)
+        let uiImage = renderer.image { context in
+            draw(key, in: context.cgContext)
         }
         guard let cgImage = uiImage.cgImage else { return nil }
         return CIImage(cgImage: cgImage)
     }
 
-    private static func draw(_ key: FrameCaptionKey) {
+    private static func draw(_ key: FrameCaptionKey, in context: CGContext) {
+        if key.scrim {
+            let colors = [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.62).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+                context.drawLinearGradient(
+                    gradient,
+                    start: .zero,
+                    end: CGPoint(x: 0, y: CGFloat(key.barHeight)),
+                    options: []
+                )
+            }
+        }
         let font = UIFont.systemFont(ofSize: CGFloat(key.fontSize), weight: .medium)
-        let attributes: [NSAttributedString.Key: Any] = [
+        let ink = key.lightText ? UIColor.white.withAlphaComponent(0.92) : UIColor.black.withAlphaComponent(0.82)
+        var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.black.withAlphaComponent(0.82)
+            .foregroundColor: ink
         ]
+        if key.lightText {
+            let shadow = NSShadow()
+            shadow.shadowColor = UIColor.black.withAlphaComponent(0.45)
+            shadow.shadowOffset = CGSize(width: 0, height: 1)
+            shadow.shadowBlurRadius = 2
+            attributes[.shadow] = shadow
+        }
         let widthOf: (String) -> CGFloat = { text in
             (text as NSString).size(withAttributes: attributes).width
         }
@@ -89,7 +112,9 @@ enum FrameCaptionRenderer {
         let date = key.date
         let modelWidth = model.isEmpty ? 0 : widthOf(model)
         let dateWidth = date.isEmpty ? 0 : widthOf(date)
-        let y = (CGFloat(key.barHeight) - font.lineHeight) / 2
+        let y = key.scrim
+            ? CGFloat(key.barHeight) - font.lineHeight - CGFloat(key.fontSize) * 0.45
+            : (CGFloat(key.barHeight) - font.lineHeight) / 2
 
         if !model.isEmpty {
             (model as NSString).draw(at: CGPoint(x: inset, y: y), withAttributes: attributes)

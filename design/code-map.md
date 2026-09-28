@@ -50,7 +50,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `LookAdjustment` | 这一次打开里改过的强度、褪色、光晕和空间参数 |
 | `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量 |
 | `RenderQuality` | `preview` 或 `still` |
-| `FrameStyle` | 关闭、白边、白边带字 |
+| `FrameStyle` | 关闭、留白、暗房、相纸、窗线、角标、压底、拍立得、印记 |
 | `FrameSettings` | 样式、型号、地点、日期、一行短句 |
 | `FrameLayout` | 由照片尺寸算出画布、照片位置和字号 |
 | `FrameDateText` | `yyyy.MM.dd` |

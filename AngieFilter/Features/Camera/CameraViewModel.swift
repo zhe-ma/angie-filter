@@ -60,7 +60,7 @@ final class CameraViewModel: ObservableObject {
         places.onDenied = { [weak self] in
             guard let self else { return }
             self.placeText = ""
-            self.placeMissing = self.frame.showsPlace && self.frame.style == .captioned
+            self.placeMissing = self.frame.showsPlace && self.frame.allowsCaption
             self.syncParameters()
         }
         syncParameters()
@@ -98,12 +98,12 @@ final class CameraViewModel: ObservableObject {
     var previewWidthOverHeight: CGFloat {
         let photo = aspectRatio.widthOverHeight
         guard frame.drawsBorder else { return photo }
-        return FrameLayout.outerWidthOverHeight(photoWidthOverHeight: photo)
+        return FrameLayout.outerWidthOverHeight(photoWidthOverHeight: photo, style: frame.style)
     }
 
     func photoRect(in size: CGSize) -> CGRect {
         guard frame.drawsBorder else { return CGRect(origin: .zero, size: size) }
-        let fractions = FrameLayout.fractions(photoWidthOverHeight: aspectRatio.widthOverHeight)
+        let fractions = FrameLayout.fractions(photoWidthOverHeight: aspectRatio.widthOverHeight, style: frame.style)
         return CGRect(
             x: size.width * fractions.left,
             y: size.height * fractions.top,
@@ -341,7 +341,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func refreshPlaceTracking() {
-        let wants = frame.showsPlace && frame.style == .captioned
+        let wants = frame.showsPlace && frame.allowsCaption
         if wants {
             placeMissing = placeText.isEmpty
             places.start()

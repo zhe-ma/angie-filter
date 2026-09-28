@@ -183,7 +183,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     private func framedImage(_ image: CIImage, parameters: RenderParameters, synchronousCaption: Bool) -> CIImage {
-        guard parameters.frame.drawsBorder, let layout = FrameLayout.make(photoSize: image.extent.size) else {
+        guard parameters.frame.drawsBorder, let layout = FrameLayout.make(photoSize: image.extent.size, style: parameters.frame.style) else {
             return image
         }
         let caption = captionPlate(layout: layout, parameters: parameters, synchronous: synchronousCaption)

@@ -100,6 +100,23 @@
     max-height: 100%;
   }
   .frame.bordered { background: #fff; }
+  .frame.ink-black { background: #000; }
+  .frame.paper { background: #f5efe4; }
+  .photo.window::after {
+    content: "";
+    position: absolute;
+    inset: 4%;
+    border: 1.5px solid rgba(255,255,255,.92);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .caption-bar.on-photo {
+    color: rgba(255,255,255,.92);
+    text-shadow: 0 1px 2px rgba(0,0,0,.45);
+  }
+  .caption-bar.scrim {
+    background: linear-gradient(to top, rgba(0,0,0,.62), transparent);
+  }
   .photo {
     position: absolute;
     left: var(--pad-x, 0);
@@ -400,7 +417,7 @@
     gap: 10px;
   }
   .frame-panel[hidden] { display: none; }
-  .frame-choices { display: flex; gap: 8px; }
+  .frame-choices { display: flex; flex-wrap: wrap; gap: 8px; }
   .frame-choices button {
     height: 32px;
     padding: 0 14px;
@@ -552,8 +569,14 @@
           <div class="frame-panel" id="frame-panel" hidden>
             <div class="frame-choices" id="frame-choices">
               <button data-action="frame-style" data-style="off">关闭</button>
-              <button data-action="frame-style" data-style="white">白边</button>
-              <button data-action="frame-style" data-style="captioned">白边带字</button>
+              <button data-action="frame-style" data-style="white">留白</button>
+              <button data-action="frame-style" data-style="black">暗房</button>
+              <button data-action="frame-style" data-style="paper">相纸</button>
+              <button data-action="frame-style" data-style="window">窗线</button>
+              <button data-action="frame-style" data-style="stamp">角标</button>
+              <button data-action="frame-style" data-style="scrim">压底</button>
+              <button data-action="frame-style" data-style="instant">拍立得</button>
+              <button data-action="frame-style" data-style="captioned">印记</button>
             </div>
             <div class="frame-fields" id="frame-fields" hidden>
               <div class="frame-switches">
@@ -615,12 +638,12 @@
         </div>
       </section>
     </div>
-    <div class="caption">左侧「相框」选白边，右侧「滤镜」选风格。一次只展开一个面板。</div>
+    <div class="caption">左侧「相框」选样式，右侧「滤镜」选风格。一次只展开一个面板。</div>
   </div>
 
   <aside class="notes">
     <h1>AngieFilter 交互</h1>
-    <p class="lead">取景默认尽量大。左侧「相框」管白边，右侧「滤镜」管风格，一次只展开一个。</p>
+    <p class="lead">取景默认尽量大。左侧「相框」可以外扩，也可以把线和字盖在照片上。右侧「滤镜」管风格，一次只展开一个。</p>
     <div class="card">
       <h2>路径</h2>
       <div class="flow">
@@ -768,9 +791,9 @@ const state = {
 
 const hints = {
   camera: [
-    "点画面对焦。点在白边上只收起面板",
-    "点左侧「相框」：关闭、白边、白边带字。和右侧「滤镜」一次只展开一个",
-    "白边带字可以分别开关型号、地点、日期，并写一行最多 12 个字的短句",
+    "点画面对焦。点在相框边上只收起面板",
+    "点左侧「相框」：留白、暗房、相纸、窗线、角标、压底、拍立得、印记",
+    "窗线、角标、压底盖在照片上，不把画面撑大。角标、压底、拍立得、印记可以写型号、地点、日期和一行短句",
     "点右下角「滤镜」展开面板，再点一次或点画面收回",
     "上面点分类，只换下面这一排；原图单独在最前",
     "缩略图都是当前画面，点一下立即套用",
@@ -781,7 +804,7 @@ const hints = {
     "点快门进入确认，不再进入编辑"
   ],
   review: [
-    "这一张就是刚才取景里看到的画面，白边和字已经在图里",
+    "这一张就是刚才取景里看到的画面，相框和字已经在图里",
     "重拍回到取景，风格、相框和变焦都还在",
     "保存写入相册，然后回到取景"
   ],
@@ -971,23 +994,35 @@ function renderChrome() {
   $("flash").setAttribute("aria-label", state.facing === "front" ? "前置没有闪光灯" : flashTitle[state.flash]);
 }
 
+function frameInsets() {
+  if (state.frameStyle === "black" || state.frameStyle === "white" || state.frameStyle === "paper") {
+    return { side: 0.055, top: 0.055, bottom: 0.055 };
+  }
+  if (state.frameStyle === "instant") return { side: 0.055, top: 0.055, bottom: 0.20 };
+  if (state.frameStyle === "captioned") return { side: 0.045, top: 0.045, bottom: 0.11 };
+  return { side: 0, top: 0, bottom: 0 };
+}
 function frameGeometry() {
   const photo = { "4:3": 3 / 4, "16:9": 16 / 9, "1:1": 1 }[state.aspect];
+  const insets = frameInsets();
   if (state.frameStyle === "off") return { ratio: photo, padX: 0, padTop: 0, padBottom: 0 };
   const short = Math.min(photo, 1);
-  const outerW = photo + 0.09 * short;
-  const outerH = 1 + 0.155 * short;
+  const outerW = photo + insets.side * 2 * short;
+  const outerH = 1 + (insets.top + insets.bottom) * short;
   return {
     ratio: outerW / outerH,
-    padX: (0.045 * short) / outerW,
-    padTop: (0.045 * short) / outerH,
-    padBottom: (0.11 * short) / outerH
+    padX: (insets.side * short) / outerW,
+    padTop: (insets.top * short) / outerH,
+    padBottom: (insets.bottom * short) / outerH
   };
 }
 function applyPads(frame) {
   const geo = frameGeometry();
   const on = state.frameStyle !== "off";
   frame.classList.toggle("bordered", on);
+  frame.classList.toggle("ink-black", state.frameStyle === "black");
+  frame.classList.toggle("paper", state.frameStyle === "paper");
+  frame.querySelector(".photo")?.classList.toggle("window", state.frameStyle === "window");
   frame.style.setProperty("--pad-x", on ? `${geo.padX * 100}%` : "0px");
   frame.style.setProperty("--pad-top", on ? `${geo.padTop * 100}%` : "0px");
   frame.style.setProperty("--pad-bottom", on ? `${geo.padBottom * 100}%` : "0px");
@@ -1006,8 +1041,13 @@ function clampGraphemes(text, max) {
 }
 function fillCaption(bar, height) {
   if (!bar) return;
-  const captioned = state.frameStyle === "captioned";
+  const captioned = ["captioned", "instant", "stamp", "scrim"].includes(state.frameStyle);
   bar.hidden = !captioned;
+  bar.classList.toggle("on-photo", state.frameStyle === "stamp" || state.frameStyle === "scrim");
+  bar.classList.toggle("scrim", state.frameStyle === "scrim");
+  if (state.frameStyle === "scrim") bar.style.height = "18%";
+  else if (state.frameStyle === "stamp") bar.style.height = "12%";
+  else bar.style.height = "";
   if (!captioned) return;
   const model = state.showsModel ? "iPhone 13" : "";
   const place = state.showsPlace && !state.placeMissing ? "上海 · 徐汇区" : "";
@@ -1018,7 +1058,10 @@ function fillCaption(bar, height) {
   bar.querySelector(".cap-custom").textContent = custom;
   bar.querySelector(".cap-date").textContent = date;
   bar.classList.toggle("only-custom", Boolean(custom) && !model && !place && !date);
-  if (height) bar.style.fontSize = `${Math.max(8, height * 0.28)}px`;
+  if (height) {
+    const scale = state.frameStyle === "instant" ? 0.155 : (state.frameStyle === "stamp" || state.frameStyle === "scrim" ? 0.22 : 0.28);
+    bar.style.fontSize = `${Math.max(8, height * scale)}px`;
+  }
 }
 function renderFrame() {
   const open = state.frameOpen;
@@ -1026,13 +1069,14 @@ function renderFrame() {
   $("frame-toggle").classList.toggle("open", open);
   $("frame-toggle").classList.toggle("on", state.frameStyle !== "off");
   $("frame-toggle").setAttribute("aria-pressed", String(open));
-  $("frame-fields").hidden = state.frameStyle !== "captioned";
+  const writes = ["captioned", "instant", "stamp", "scrim"].includes(state.frameStyle);
+  $("frame-fields").hidden = !writes;
   document.querySelectorAll("#frame-choices button").forEach((button) => {
     button.classList.toggle("active", button.dataset.style === state.frameStyle);
   });
   $("frame-model").checked = state.showsModel;
   $("frame-place").checked = state.showsPlace;
-  $("frame-place-note").hidden = !(state.frameStyle === "captioned" && state.showsPlace && state.placeMissing);
+  $("frame-place-note").hidden = !(writes && state.showsPlace && state.placeMissing);
   $("frame-date").checked = state.showsDate;
   if (document.activeElement !== $("frame-text")) $("frame-text").value = state.customText;
   const geo = applyPads($("frame"));
@@ -1160,13 +1204,23 @@ $("phone").addEventListener("click", (event) => {
     renderFrame();
     requestAnimationFrame(layoutFrame);
     explain(state.frameOpen
-      ? "相框面板打开。可选关闭、白边、白边带字。滤镜面板已收起。"
+      ? "相框面板打开。留白、暗房、相纸往外扩。窗线、角标、压底盖在照片上。滤镜面板已收起。"
       : "相框面板收起。当前样式留在这次打开里。");
   } else if (action === "frame-style") {
     state.frameStyle = target.dataset.style;
     renderFrame();
     layoutFrame();
-    const label = { off: "关闭。画面回到裁切比例。", white: "白边。四周留白，底部更宽，没有字。", captioned: "白边带字。型号和日期默认开着，地点默认关，可以再写一行短句。" };
+    const label = {
+      off: "关闭。画面回到裁切比例。",
+      white: "留白。四周等宽的白卡纸，没有字。",
+      black: "暗房。和留白一样宽，底是黑的。",
+      paper: "相纸。和留白一样宽，颜色是暖相纸。",
+      window: "窗线。照片里描一圈细白线，画面大小不变。",
+      stamp: "角标。白字直接写在画面底部，不另加边。",
+      scrim: "压底。画面底部压一层暗，白字写在上面。",
+      instant: "拍立得。底边更宽，字写在这一条里。",
+      captioned: "印记。底部一条白边，型号和日期默认开着，地点默认关。"
+    };
     explain(label[state.frameStyle]);
   } else if (action === "family") {
     state.familyId = target.dataset.id;
@@ -1268,7 +1322,7 @@ $("finder").addEventListener("click", (event) => {
   }
   const inPhoto = x >= photoRect.left && y >= photoRect.top && x <= photoRect.right && y <= photoRect.bottom;
   if (!inPhoto) {
-    explain("点在白边上，只收起面板，不对焦。");
+    explain("点在相框边上，只收起面板，不对焦。");
     return;
   }
   photo.querySelectorAll(".focus").forEach((node) => node.remove());
@@ -1296,7 +1350,7 @@ $("finder").addEventListener("wheel", (event) => {
 $("frame-model").addEventListener("change", () => {
   state.showsModel = $("frame-model").checked;
   renderFrame();
-  explain(state.showsModel ? "底栏左侧显示 iPhone 13。" : "型号已关掉。再打开「白边带字」时还会记得这个开关。");
+  explain(state.showsModel ? "底栏左侧显示 iPhone 13。" : "型号已关掉。再打开能写字的相框时还会记得这个开关。");
 });
 $("frame-place").addEventListener("change", () => {
   state.showsPlace = $("frame-place").checked;
