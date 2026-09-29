@@ -86,15 +86,26 @@ struct CameraView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// With 跟拍, how far round the phone has circled sits beside the time, for a steady orbit.
     private var recordingClock: some View {
         let seconds = model.recordingSeconds
-        return Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
-            .font(.system(size: 15, weight: .semibold).monospacedDigit())
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .background(Color.red, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .allowsHitTesting(false)
+        return HStack(spacing: 6) {
+            Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(Color.red, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            if let orbit = model.status.orbitDegrees {
+                Text("绕 \(abs(orbit))°")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(abs(orbit) >= 90 ? CameraPalette.accent : Color.white)
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(CameraPalette.tray, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private var preview: some View {
@@ -191,18 +202,16 @@ struct CameraView: View {
     }
 
     private var shootDeck: some View {
-        let strengthShown = !model.beautyOpen && model.moveOpen && model.moveAvailable && model.move.followsFace
-        return VStack(spacing: model.dualOn || strengthShown ? 10 : 16) {
+        let movePicking = !model.beautyOpen && model.moveOpen && model.moveAvailable
+        return VStack(spacing: model.dualOn || movePicking ? 10 : 16) {
             if model.dualOn {
                 dualRow
             }
             if model.beautyOpen {
                 beautyRow
-            } else if model.moveOpen, model.moveAvailable {
+            } else if movePicking {
                 moveRow
-                if strengthShown {
-                    dollyStrengthRow
-                }
+                moveOptionsRow
             } else if model.dualOn, model.dualLayout == .blend {
                 veilRow
             } else {
@@ -215,50 +224,100 @@ struct CameraView: View {
         .animation(.easeOut(duration: 0.15), value: model.move)
     }
 
+    /// Under the move row: the picked move's own setting on the left, then 水平 (off, 锁平, 匀转), 手持 and 虚化 for any
+    /// move. Scrolls sideways when it doesn't fit.
+    private var moveOptionsRow: some View {
+        let options = model.moveOptions
+        let row = HStack(spacing: 8) {
+            switch model.move {
+            case .dollyAway, .dollyToward:
+                dollyStrength(options.strength)
+            case .pushIn:
+                optionChip(options.glideSecondsText, changed: options.glideSeconds != MoveOptions().glideSeconds,
+                           action: model.cycleGlideSeconds)
+                optionChip("到 " + MoveOptions.times(options.pushReach), changed: options.pushReach != MoveOptions().pushReach,
+                           action: model.cyclePushReach)
+            case .pullOut:
+                optionChip(options.glideSecondsText, changed: options.glideSeconds != MoveOptions().glideSeconds,
+                           action: model.cycleGlideSeconds)
+                optionChip("从 " + MoveOptions.times(options.pullStart), changed: options.pullStart != MoveOptions().pullStart,
+                           action: model.cyclePullStart)
+            case .crashIn:
+                optionChip(MoveOptions.seconds(options.crashDelay) + "后", changed: options.crashDelay != MoveOptions().crashDelay,
+                           action: model.cycleCrashDelay)
+                optionChip(options.crashText,
+                           changed: options.crashReach != MoveOptions().crashReach || options.crashOut,
+                           action: model.cycleCrashReach)
+                optionChip("定格", changed: options.crashFreeze, action: model.toggleCrashFreeze)
+            case .follow:
+                EmptyView()
+            }
+            Spacer(minLength: 0)
+            optionChip(options.horizon.label, changed: options.horizon != .off, action: model.cycleHorizon)
+            optionChip("手持", changed: options.handheld, action: model.toggleHandheld)
+            optionChip("虚化", changed: options.backgroundBlur, action: model.toggleBackgroundBlur)
+        }
+        .padding(.horizontal, 24)
+        return ViewThatFits(in: .horizontal) {
+            row
+            ScrollView(.horizontal, showsIndicators: false) { row }
+        }
+        .frame(height: 32)
+        .transition(.opacity)
+    }
+
     /// 希区柯克 strength as a percent: 100 holds the face's size. Double-tap the number for 100.
-    private var dollyStrengthRow: some View {
-        HStack(spacing: 12) {
+    private func dollyStrength(_ strength: Float) -> some View {
+        HStack(spacing: 8) {
             Text("强度")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(CameraPalette.secondary)
                 .upright(model.iconAngle)
             Slider(
                 value: Binding(
-                    get: { Double(model.dollyStrength) },
+                    get: { Double(strength) },
                     set: { model.setDollyStrength(Float($0)) }
                 ),
-                in: Double(CameraViewModel.dollyStrengthRange.lowerBound)...Double(CameraViewModel.dollyStrengthRange.upperBound)
+                in: Double(MoveOptions.strengthRange.lowerBound)...Double(MoveOptions.strengthRange.upperBound)
             )
             .tint(.white)
-            Text("\(Int((model.dollyStrength * 100).rounded()))%")
+            Text("\(Int((strength * 100).rounded()))%")
                 .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                .foregroundStyle(abs(model.dollyStrength - 1) < 0.001 ? Color.white : CameraPalette.accent)
-                .frame(width: 40, alignment: .trailing)
+                .foregroundStyle(abs(strength - 1) < 0.001 ? Color.white : CameraPalette.accent)
+                .frame(width: 38, alignment: .trailing)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2, perform: model.resetDollyStrength)
         }
-        .frame(height: 32)
-        .padding(.horizontal, 28)
-        .transition(.opacity)
     }
 
-    /// 希区柯克's two walks, then the two glides; picking one also sets the zoom the take starts at.
-    /// 关闭 turns 运镜 off and hides the row.
-    private var moveRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: moveSymbol(model.move))
-                .font(.system(size: 13))
-                .foregroundStyle(CameraPalette.secondary)
+    /// Steps through its values on each tap; yellow when not at its default.
+    private func optionChip(_ title: String, changed: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(changed ? CameraPalette.accent : Color.white.opacity(0.85))
                 .upright(model.iconAngle)
-            HStack(spacing: 2) {
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(CameraPalette.tray, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 希区柯克's two walks, then the zoom-only moves, then 跟拍; picking one also sets the zoom the take starts at.
+    /// 关闭 turns 运镜 off and hides the row. Scrolls sideways on a phone too narrow for it.
+    private var moveRow: some View {
+        let row = HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 ForEach(CameraMove.allCases) { move in
-                    if move == .pushIn {
+                    if move == .pushIn || move == .follow {
                         Rectangle()
                             .fill(Color.white.opacity(0.25))
                             .frame(width: 1, height: 14)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, 3)
                     }
-                    tab(move.title, selected: model.move == move) {
+                    tab(move.title(model.moveOptions), selected: model.move == move, padding: 6) {
                         model.setMove(move)
                     }
                 }
@@ -269,8 +328,12 @@ struct CameraView: View {
                 .foregroundStyle(CameraPalette.secondary)
                 .buttonStyle(.plain)
         }
+        .padding(.horizontal, 24)
+        return ViewThatFits(in: .horizontal) {
+            row
+            ScrollView(.horizontal, showsIndicators: false) { row }
+        }
         .frame(height: 40)
-        .padding(.horizontal, 28)
         .transition(.opacity)
     }
 
@@ -340,7 +403,7 @@ struct CameraView: View {
                 Button(action: model.toggleFrameRate) {
                     Text(model.frameRate.label)
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(model.frameRate == .twentyFour ? CameraPalette.accent : Color.white)
+                        .foregroundStyle(model.frameRate == .thirty ? Color.white : CameraPalette.accent)
                         .upright(model.iconAngle)
                         .frame(width: trayItemWidth, height: 44)
                         .contentShape(Rectangle())
@@ -358,8 +421,10 @@ struct CameraView: View {
                     }
                 }
                 if model.moveAvailable {
-                    trayButton(moveSymbol(model.move), on: model.moveOn, action: model.tapMove)
-                        .lockedWhileRecording(model.isRecording)
+                    // Mid-take with 运镜 on it fires 冲击.
+                    let hits = model.isRecording && model.moveOn
+                    trayButton(hits ? "sparkles" : moveSymbol(model.move), on: model.moveOn, action: model.tapMove)
+                        .lockedWhileRecording(model.isRecording && !hits)
                 }
             } else {
                 trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",
@@ -410,6 +475,8 @@ struct CameraView: View {
         case .dollyAway, .dollyToward: "person.and.background.dotted"
         case .pushIn: "plus.magnifyingglass"
         case .pullOut: "minus.magnifyingglass"
+        case .crashIn: "bolt"
+        case .follow: "viewfinder"
         }
     }
 
@@ -760,12 +827,12 @@ struct CameraView: View {
     }
 
     /// Text tab: selected is bright and bold, the rest recede. No boxes.
-    private func tab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func tab(_ title: String, selected: Bool, padding: CGFloat = 8, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 14, weight: selected ? .semibold : .regular))
                 .foregroundStyle(selected ? Color.white : Color.white.opacity(0.45))
-                .padding(.horizontal, 8)
+                .padding(.horizontal, padding)
                 .frame(height: 28)
                 .contentShape(Rectangle())
         }

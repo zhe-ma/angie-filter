@@ -73,15 +73,67 @@ enum FrameImageMaker {
         return shiftedToOrigin(image.oriented(orientation))
     }
 
-    /// `rect` of `image`, scaled up to fill `image`'s own extent, so the frame keeps its size.
-    static func cut(_ image: CIImage, to rect: CGRect) -> CIImage {
-        let extent = image.extent
-        guard rect.width > 1, rect.height > 1 else { return image }
-        let fill = CGAffineTransform(translationX: -rect.minX, y: -rect.minY)
-            .concatenating(CGAffineTransform(scaleX: extent.width / rect.width, y: extent.height / rect.height))
-            .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY))
+    /// `cut` of `image`, turned upright and scaled up to fill `image`'s own extent, so the frame keeps its size.
+    static func cut(_ image: CIImage, to cut: FrameCut) -> CIImage {
+        guard let fill = cut.fill(image.extent) else { return image }
         // Clamped first, so the edges of the cut sample picture rather than transparency.
-        return image.clampedToExtent().transformed(by: fill).cropped(to: extent)
+        return image.clampedToExtent().transformed(by: fill).cropped(to: image.extent)
+    }
+
+    /// What's outside `people` (white on them) blurred by up to `radius` pixels, the edge softened so hair doesn't cut
+    /// out hard.
+    static func backgroundBlurred(_ image: CIImage, people: CIImage, radius: CGFloat) -> CIImage {
+        guard radius >= 1 else { return image }
+        let background = people
+            .applyingFilter("CIColorInvert")
+            .clampedToExtent()
+            .applyingGaussianBlur(sigma: max(radius / 4, 2))
+            .cropped(to: image.extent)
+        return image.clampedToExtent()
+            .applyingFilter("CIMaskedVariableBlur", parameters: ["inputMask": background, kCIInputRadiusKey: radius])
+            .cropped(to: image.extent)
+    }
+
+    /// `amount` of white laid over the picture, for a flash.
+    static func flashed(_ image: CIImage, amount: CGFloat) -> CIImage {
+        guard amount > 0.001 else { return image }
+        let keep = 1 - amount
+        return image.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: keep, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: keep, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: keep, w: 0),
+            "inputBiasVector": CIVector(x: amount, y: amount, z: amount, w: 0)
+        ])
+    }
+
+    /// The picture moving `length` pixels at `angle` while the shutter was open, as in a fast pan.
+    static func motionBlurred(_ image: CIImage, length: CGFloat, angle: CGFloat) -> CIImage {
+        guard length >= 2 else { return image }
+        return image.clampedToExtent()
+            .applyingFilter("CIMotionBlur", parameters: [kCIInputRadiusKey: length / 2, kCIInputAngleKey: angle])
+            .cropped(to: image.extent)
+    }
+
+    /// The zoom moving by `spread` of the frame while the shutter was open, toward `center`; negative zooms out.
+    static func zoomBlurred(_ image: CIImage, center: CGPoint, spread: CGFloat) -> CIImage {
+        let extent = image.extent
+        guard let kernel = EffectKernels.zoomBlur, abs(spread) > 0.0005, extent.width > 1 else { return image }
+        let corner = max(hypot(extent.minX - center.x, extent.minY - center.y),
+                         hypot(extent.maxX - center.x, extent.maxY - center.y),
+                         hypot(extent.minX - center.x, extent.maxY - center.y),
+                         hypot(extent.maxX - center.x, extent.minY - center.y))
+        // A tap every 3 pixels of the longest streak.
+        let samples = min(max(abs(spread) * corner / 3, 4), 48)
+        let reach = 1 - spread
+        return kernel.apply(
+            extent: extent,
+            roiCallback: { _, rect in
+                let far = CGRect(x: center.x + (rect.minX - center.x) * reach, y: center.y + (rect.minY - center.y) * reach,
+                                 width: rect.width * reach, height: rect.height * reach)
+                return rect.union(far).insetBy(dx: -2, dy: -2)
+            },
+            arguments: [image.clampedToExtent(), CIVector(cgPoint: center), spread, samples]
+        )?.cropped(to: extent) ?? image
     }
 
     static func scaledForPreview(_ image: CIImage) -> CIImage {

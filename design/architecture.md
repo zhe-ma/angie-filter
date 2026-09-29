@@ -219,7 +219,7 @@ flowchart LR
 
 不用 actor 包住 `AVCaptureSession`。会话回调留在它自己的队列上。`onStatus`、`onPhoto`、`onFailure` 都回到主队列。
 
-预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。双摄用自己的 `angie.camera.dual.session`、`angie.camera.dual.video` 和 `angie.camera.dual.photo`。美颜的人脸检测在 `FaceTracker` 自己的 `angie.faces` 上，视频队列只把帧拷成小图交过去，取景用的是上一次检测的结果。运镜的人脸检测在 `FaceWatch` 的 `angie.follow` 上，录制中每帧都测，上一帧没测完就跳过；`DollyZoom` 在同一个队列上算出变焦，回到会话队列去 `ramp`；`FaceFraming` 的裁切框在视频队列上每帧取一次。慢推 / 慢拉的定时器直接跑在会话队列上。合成忙时合并成下一次绘制，不让后置的忙挡住前置更新最近一帧。两套会话不同时 `startRunning`。
+预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。双摄用自己的 `angie.camera.dual.session`、`angie.camera.dual.video` 和 `angie.camera.dual.photo`。美颜的人脸检测在 `FaceTracker` 自己的 `angie.faces` 上，视频队列只把帧拷成小图交过去，取景用的是上一次检测的结果。运镜的人脸检测在 `FaceWatch` 的 `angie.follow` 上，录制中每帧都测，上一帧没测完就跳过；`DollyZoom` 在同一个队列上算出变焦，回到会话队列去 `ramp`；`FaceFraming` 的裁切框在视频队列上每帧取一次，锁平的 `HorizonLock` 和变焦、甩镜模糊也在视频队列上算。运镜开着时 `MotionTrail` 的设备运动回调在它自己的 `angie.motion` 操作队列上，只往带锁的缓冲里追加；`ZoomTrail` 在视频队列上每帧记一次变焦。虚化的人像分割在 `PersonMask` 自己的 `angie.segment` 上，上一张没做完就不交新的，视频队列拿最新一张遮罩。点选跟住的方块由 `FaceWatch` 在 `angie.follow` 上用 `VNSequenceRequestHandler` 连续跟踪，跟踪器只在这个队列上碰。环绕角度的定时器在会话队列上。慢推 / 慢拉 / 急推的定时器直接跑在会话队列上。单摄的照片回调由系统在主线程上给，`CameraSessionController` 立刻转到串行的 `angie.camera.photo` 上做成片渲染（`createCGImage` 可能要几百毫秒），实况短视频和 `didFinishCaptureFor` 的回调也转过去，保持同一张照片的几个回调的先后。合成忙时合并成下一次绘制，不让后置的忙挡住前置更新最近一帧。两套会话不同时 `startRunning`。
 
 ## 命名
 

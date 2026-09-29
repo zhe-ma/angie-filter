@@ -274,5 +274,20 @@ float4 skinFinish(sample_t color, sample_t average, sample_t mask, float evennes
     return float4(even + (1.0 - clamp(even, 0.0, 1.0)) * m * glow, color.a);
 }
 
+// 运镜 zoom blur: the picture as if the zoom moved while the shutter was open. Zooming in by `spread` during the
+// exposure moves every point outward, so each pixel averages what lay between it and 1 − spread of the way from the
+// center; a negative spread is zooming out and reaches outward instead.
+float4 zoomBlur(sampler image, float2 center, float spread, float samples, destination dest) {
+    float2 p = dest.coord();
+    float2 d = p - center;
+    int count = max(int(samples), 2);
+    float4 sum = float4(0.0);
+    for (int i = 0; i < count; i++) {
+        float scale = 1.0 - spread * float(i) / float(count - 1);
+        sum += image.sample(image.transform(center + d * scale));
+    }
+    return sum / float(count);
+}
+
 }
 }

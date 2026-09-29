@@ -81,8 +81,49 @@ final class CameraViewModel: ObservableObject {
     /// Light enough that the face still reads as untouched: blotches soften, pores and stubble stay.
     static let beautyDefault: Float = 0.3
     private static let dollyStrengthKey = "capture.dollyStrength"
-    /// 希区柯克 strength: 1 holds the face's size; below lets it change some with the walk, above overshoots.
-    static let dollyStrengthRange: ClosedRange<Float> = 0.3...1.5
+    private static let glideSecondsKey = "capture.glideSeconds"
+    private static let pushReachKey = "capture.pushReach"
+    private static let pullStartKey = "capture.pullStart"
+    private static let crashDelayKey = "capture.crashDelay"
+    private static let crashReachKey = "capture.crashReach"
+    private static let horizonKey = "capture.horizon"
+    private static let handheldKey = "capture.handheld"
+    private static let crashOutKey = "capture.crashOut"
+    private static let crashFreezeKey = "capture.crashFreeze"
+    private static let backgroundBlurKey = "capture.backgroundBlur"
+
+    private static func savedMoveOptions() -> MoveOptions {
+        let defaults = UserDefaults.standard
+        var options = MoveOptions()
+        func number(_ key: String) -> Double? { defaults.object(forKey: key) as? Double }
+        options.strength = defaults.object(forKey: dollyStrengthKey) as? Float ?? options.strength
+        options.glideSeconds = number(glideSecondsKey) ?? options.glideSeconds
+        options.pushReach = number(pushReachKey).map { CGFloat($0) } ?? options.pushReach
+        options.pullStart = number(pullStartKey).map { CGFloat($0) } ?? options.pullStart
+        options.crashDelay = number(crashDelayKey) ?? options.crashDelay
+        options.crashReach = number(crashReachKey).map { CGFloat($0) } ?? options.crashReach
+        options.horizon = defaults.string(forKey: horizonKey).flatMap(HorizonMode.init(rawValue:)) ?? options.horizon
+        options.handheld = defaults.bool(forKey: handheldKey)
+        options.crashOut = defaults.bool(forKey: crashOutKey)
+        options.crashFreeze = defaults.bool(forKey: crashFreezeKey)
+        options.backgroundBlur = defaults.bool(forKey: backgroundBlurKey)
+        return options
+    }
+
+    private func saveMoveOptions() {
+        let defaults = UserDefaults.standard
+        defaults.set(moveOptions.strength, forKey: Self.dollyStrengthKey)
+        defaults.set(moveOptions.glideSeconds, forKey: Self.glideSecondsKey)
+        defaults.set(Double(moveOptions.pushReach), forKey: Self.pushReachKey)
+        defaults.set(Double(moveOptions.pullStart), forKey: Self.pullStartKey)
+        defaults.set(moveOptions.crashDelay, forKey: Self.crashDelayKey)
+        defaults.set(Double(moveOptions.crashReach), forKey: Self.crashReachKey)
+        defaults.set(moveOptions.horizon.rawValue, forKey: Self.horizonKey)
+        defaults.set(moveOptions.handheld, forKey: Self.handheldKey)
+        defaults.set(moveOptions.crashOut, forKey: Self.crashOutKey)
+        defaults.set(moveOptions.crashFreeze, forKey: Self.crashFreezeKey)
+        defaults.set(moveOptions.backgroundBlur, forKey: Self.backgroundBlurKey)
+    }
 
     @Published private(set) var status = CameraStatus()
     @Published var aspectRatio: AspectRatio = .threeFour
@@ -106,7 +147,8 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var move = CameraMove.dollyAway
     /// The move picker, in place of the focal ring.
     @Published private(set) var moveOpen = false
-    @Published private(set) var dollyStrength = UserDefaults.standard.object(forKey: CameraViewModel.dollyStrengthKey) as? Float ?? 1
+    /// Each move's settings, 锁平 / 匀转 and 手持感; kept on the phone.
+    @Published private(set) var moveOptions = CameraViewModel.savedMoveOptions()
     @Published private(set) var beautyOn = UserDefaults.standard.bool(forKey: CameraViewModel.beautyKey)
     /// Kept while 美颜 is off, so turning it back on returns to the same strength.
     @Published private(set) var beautyAmount = UserDefaults.standard.object(forKey: CameraViewModel.beautyAmountKey) as? Float
@@ -223,6 +265,7 @@ final class CameraViewModel: ObservableObject {
         session.setLivePhoto(liveWanted)
         session.setVideoFrameRate(frameRate)
         dualSession.setVideoFrameRate(frameRate)
+        session.setMoveOptions(moveOptions)
         session.start()
         dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -279,6 +322,10 @@ final class CameraViewModel: ObservableObject {
         } else {
             rememberSingleLook()
             applyDualLook()
+            if frameRate == .lapse {
+                // 延时 is single camera only.
+                setFrameRate(.thirty)
+            }
             dualOn = true
             dualSession.setSelected(dualSelected)
             dualSession.setFlash(status.flashMode)
@@ -586,6 +633,12 @@ final class CameraViewModel: ObservableObject {
             : CGPoint(x: y, y: 1 - x)
         showFocus(at: displayPoint)
         session.focus(atDevicePoint: devicePoint)
+        if moveOn, moveAvailable {
+            session.pickSubject(atPicturePoint: CGPoint(x: x, y: y))
+            if !isRecording {
+                flashBanner("开拍后跟住这里")
+            }
+        }
     }
 
     func pinchChanged(_ scale: CGFloat) {
@@ -657,7 +710,12 @@ final class CameraViewModel: ObservableObject {
     /// Off: turns 运镜 on with the last move and shows the picker. On: shows or hides the picker.
     /// 希区柯克 keeps the face's size while the phone walks; 慢推 / 慢拉 ease the zoom over the take's first seconds.
     /// A zoom stop or a pinch mid-take starts 希区柯克 over from the size then, and stops a glide.
+    /// Mid-take the same button fires 冲击 instead.
     func tapMove() {
+        if isRecording, moveOn, moveAvailable {
+            session.impact()
+            return
+        }
         guard moveAvailable, !isRecording else { return }
         guard moveOn else {
             setMoveOn(true)
@@ -670,23 +728,82 @@ final class CameraViewModel: ObservableObject {
     func setMoveOn(_ on: Bool) {
         guard moveAvailable, !isRecording, moveOn != on else { return }
         moveOn = on
-        session.setDollyStrength(dollyStrength)
         session.setCameraMove(on ? move : nil)
-        flashBanner(on ? move.hint : "运镜已关闭")
+        flashBanner(on ? move.hint(moveOptions) : "运镜已关闭")
     }
 
-    /// Snaps to 5% steps; takes effect at the next take.
+    private func changeMoveOptions(banner: ((MoveOptions) -> String)? = nil, _ body: (inout MoveOptions) -> Void) {
+        guard !isRecording else { return }
+        var next = moveOptions
+        body(&next)
+        guard next != moveOptions else { return }
+        moveOptions = next
+        saveMoveOptions()
+        session.setMoveOptions(next)
+        if let banner {
+            flashBanner(banner(next))
+        }
+    }
+
+    /// 希区柯克 strength, in 5% steps; takes effect at the next take.
     func setDollyStrength(_ value: Float) {
-        let range = Self.dollyStrengthRange
+        let range = MoveOptions.strengthRange
         let next = (min(max(value, range.lowerBound), range.upperBound) * 20).rounded() / 20
-        guard next != dollyStrength, !isRecording else { return }
-        dollyStrength = next
-        UserDefaults.standard.set(next, forKey: Self.dollyStrengthKey)
-        session.setDollyStrength(next)
+        changeMoveOptions { $0.strength = next }
     }
 
     func resetDollyStrength() {
         setDollyStrength(1)
+    }
+
+    /// The chips under the move row each step through a few values.
+    func cycleGlideSeconds() {
+        changeMoveOptions(banner: { self.move.hint($0) }) {
+            $0.glideSeconds = MoveOptions.cycle($0.glideSeconds, in: MoveOptions.glideSecondsSteps)
+        }
+    }
+
+    func cyclePushReach() {
+        changeMoveOptions(banner: { self.move.hint($0) }) {
+            $0.pushReach = MoveOptions.cycle($0.pushReach, in: MoveOptions.pushReachSteps)
+        }
+    }
+
+    /// Moves the zoom to the new start at once.
+    func cyclePullStart() {
+        changeMoveOptions(banner: { self.move.hint($0) }) {
+            $0.pullStart = MoveOptions.cycle($0.pullStart, in: MoveOptions.pullStartSteps)
+        }
+    }
+
+    func cycleCrashDelay() {
+        changeMoveOptions(banner: { self.move.hint($0) }) {
+            $0.crashDelay = MoveOptions.cycle($0.crashDelay, in: MoveOptions.crashDelaySteps)
+        }
+    }
+
+    /// In by 2, 3, 4 times, then out by the same; moves the zoom to the new start at once.
+    func cycleCrashReach() {
+        changeMoveOptions(banner: { self.move.hint($0) }) { $0.cycleCrash() }
+    }
+
+    func toggleCrashFreeze() {
+        changeMoveOptions(banner: { self.move.hint($0) }) { $0.crashFreeze.toggle() }
+    }
+
+    func toggleBackgroundBlur() {
+        changeMoveOptions(banner: { $0.backgroundBlur ? "虚化：人物后面虚掉，焦段越长越虚" : "虚化已关闭" }) {
+            $0.backgroundBlur.toggle()
+        }
+    }
+
+    /// Off, 锁平, 匀转; shows in the preview at once.
+    func cycleHorizon() {
+        changeMoveOptions(banner: { $0.horizon.hint }) { $0.horizon = $0.horizon.next }
+    }
+
+    func toggleHandheld() {
+        changeMoveOptions(banner: { $0.handheld ? "手持感：画面缓缓呼吸般飘动" : "手持感已关闭" }) { $0.handheld.toggle() }
     }
 
     /// Moves the zoom to where that move starts.
@@ -694,16 +811,25 @@ final class CameraViewModel: ObservableObject {
         guard moveOn, !isRecording, move != next else { return }
         move = next
         session.setCameraMove(next)
-        flashBanner(next.hint)
+        flashBanner(next.hint(moveOptions))
     }
 
+    /// 30P, 24P, then 延时 on a single camera.
     func toggleFrameRate() {
         guard mode == .video, !isRecording else { return }
-        frameRate = frameRate.next
-        UserDefaults.standard.set(frameRate.rawValue, forKey: Self.frameRateKey)
-        session.setVideoFrameRate(frameRate)
-        dualSession.setVideoFrameRate(frameRate)
-        flashBanner(frameRate == .twentyFour ? "24 帧，电影的帧率" : "30 帧")
+        setFrameRate(frameRate.next(lapseAllowed: !dualOn))
+        switch frameRate {
+        case .thirty: flashBanner("30 帧")
+        case .twentyFour: flashBanner("24 帧，电影的帧率")
+        case .lapse: flashBanner("延时：\(VideoFrameRate.lapseSpeed) 倍速、无声，边走边拍；配运镜里的锁平更稳")
+        }
+    }
+
+    private func setFrameRate(_ next: VideoFrameRate) {
+        frameRate = next
+        UserDefaults.standard.set(next.rawValue, forKey: Self.frameRateKey)
+        session.setVideoFrameRate(next)
+        dualSession.setVideoFrameRate(next)
     }
 
     /// The frame, aspect, and dual layout fix the movie's size, so they lock while recording. Looks can still change.

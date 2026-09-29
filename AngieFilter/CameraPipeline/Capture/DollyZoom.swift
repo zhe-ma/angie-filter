@@ -18,16 +18,15 @@ final class DollyZoom: @unchecked Sendable {
     private static let beta: Double = 0.06
     /// A surprise over this, in natural log, is a turned head or a bad box more than a step; it counts a quarter.
     private static let outlier: Double = 0.15
-    /// Ahead of the last measurement, for detection and the zoom taking effect.
-    private static let lead: Double = 0.1
+    /// Ahead of now, for the zoom taking effect. Frames reach detection late, more so when stabilized, so the
+    /// distance is carried from the frame's time to now first.
+    private static let lead: Double = 0.05
     /// Without a face this long the walk is taken to have stopped.
     private static let lostAfter: Double = 0.4
     private static let baselineSamples = 3
     private static let smallestFace: CGFloat = 0.03
     /// Steps smaller than this, in stops, are left out.
     private static let deadBand: CGFloat = 0.003
-    /// Zoom readings kept to look up what a frame was shot at.
-    private static let history = 12
 
     private struct Filter {
         var distance: Double
@@ -45,7 +44,6 @@ final class DollyZoom: @unchecked Sendable {
         /// with the walk, more overshoots so it shrinks as the phone comes closer.
         var strength: Double = 1
         var extent: CGSize = .zero
-        var zooms: [(time: Double, zoom: CGFloat)] = []
         var samples: [Double] = []
         var baseline: (zoom: CGFloat, distance: Double)?
         var filter: Filter?
@@ -54,6 +52,12 @@ final class DollyZoom: @unchecked Sendable {
     }
 
     private let state = Locked(State())
+    /// Must be running whenever this is armed, so a sighting can look up the zoom its frame was shot at.
+    private let trail: ZoomTrail
+
+    init(trail: ZoomTrail) {
+        self.trail = trail
+    }
 
     var isArmed: Bool {
         state.with { $0.device != nil }
@@ -71,20 +75,9 @@ final class DollyZoom: @unchecked Sendable {
         state.with { $0 = State() }
     }
 
-    /// Call on the video queue with every frame, so a sighting can look up the zoom its frame was shot at.
-    func noteFrame() {
-        let now = CACurrentMediaTime()
-        state.with { state in
-            guard let device = state.device else { return }
-            state.zooms.append((now, device.videoZoomFactor))
-            if state.zooms.count > Self.history {
-                state.zooms.removeFirst(state.zooms.count - Self.history)
-            }
-        }
-    }
-
     /// `face` is normalized to a frame of `extent`, shot at `shot` on the host clock.
     func measure(_ face: CGRect?, shot: Double, extent: CGSize) {
+        let shotZoom = trail.zoom(at: shot)
         let step = state.with { state -> (zoom: CGFloat, rate: Float)? in
             // A frame from before arming was shot at a zoom the readings no longer cover.
             guard state.device != nil, shot >= state.armedAt else { return nil }
@@ -98,7 +91,7 @@ final class DollyZoom: @unchecked Sendable {
             guard let face else { return nil }
             let size = (face.width * face.height).squareRoot()
             guard size > Self.smallestFace else { return nil }
-            let measured = log(Double(Self.zoom(at: shot, in: state.zooms) / size))
+            let measured = log(Double(shotZoom / size))
             guard let baseline = state.baseline, var filter = state.filter else {
                 state.samples.append(measured)
                 if state.samples.count >= Self.baselineSamples {
@@ -121,14 +114,16 @@ final class DollyZoom: @unchecked Sendable {
             filter.speed += Self.beta * weight * surprise / min(elapsed, Self.lostAfter)
             filter.time = shot
             state.filter = filter
-            let ahead = filter.distance + filter.speed * Self.lead - baseline.distance
+            let horizon = min(max(CACurrentMediaTime() - shot, 0), Self.lostAfter) + Self.lead
+            let ahead = filter.distance + filter.speed * horizon - baseline.distance
             let wanted = baseline.zoom * CGFloat(exp(ahead * state.strength))
             let bounded = min(max(wanted, state.range.lowerBound), state.range.upperBound)
             let target = state.zoomsIn ? max(bounded, state.zoom) : min(bounded, state.zoom)
             if shot - state.lastLog >= 1 {
                 state.lastLog = shot
-                PerfLog.line(String(format: "dolly face %.3f, distance x%.2f, speed %+.2f/s, zoom %.2f -> %.2f",
-                                    size, exp(filter.distance - baseline.distance), filter.speed, state.zoom, target))
+                PerfLog.line(String(format: "dolly face %.3f, distance x%.2f, speed %+.2f/s, ahead %.2fs, zoom %.2f -> %.2f",
+                                    size, exp(filter.distance - baseline.distance), filter.speed, horizon,
+                                    state.zoom, target))
             }
             let stops = log2(target / state.zoom)
             guard abs(stops) >= Self.deadBand else { return nil }
@@ -139,17 +134,5 @@ final class DollyZoom: @unchecked Sendable {
         if let step {
             onZoom?(step.zoom, step.rate)
         }
-    }
-
-    /// The zoom at the frame's own time, between the readings taken as frames came in.
-    private static func zoom(at time: Double, in readings: [(time: Double, zoom: CGFloat)]) -> CGFloat {
-        guard let first = readings.first, let last = readings.last else { return 1 }
-        if time <= first.time { return first.zoom }
-        if time >= last.time { return last.zoom }
-        for (earlier, later) in zip(readings, readings.dropFirst()) where later.time >= time {
-            let share = CGFloat((time - earlier.time) / max(later.time - earlier.time, 0.0001))
-            return earlier.zoom + share * (later.zoom - earlier.zoom)
-        }
-        return last.zoom
     }
 }

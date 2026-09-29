@@ -17,15 +17,48 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "angie.camera.session")
     private let videoQueue = DispatchQueue(label: "angie.camera.video", qos: .userInteractive)
+    private let photoQueue = DispatchQueue(label: "angie.camera.photo", qos: .userInitiated)
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let parameters = Locked(RenderParameters())
     private let thumbnailTap = ThumbnailFrameTap()
     private let faceTracker = FaceTracker()
-    private let dolly = DollyZoom()
+    private let trail = ZoomTrail()
+    private let dolly: DollyZoom
     private let glide = ZoomGlide()
     private let watch = FaceWatch()
     private let framing = FaceFraming()
+    private let motion = MotionTrail()
+    private let horizon = HorizonLock()
+    /// The 运镜 options the video queue reads every frame; the session queue writes them.
+    private let frameMoveOptions = Locked(MoveOptions())
+    /// The camera's widest horizontal view, in degrees, for the whip blur's focal length.
+    private let fieldOfView = Locked<Float>(0)
+    private enum Freeze {
+        case none
+        /// Frames shot from then on hold.
+        case due(Double)
+        case holding(CIImage, until: Double)
+    }
+
+    /// 急推's 定格: the video queue holds the graded picture the snap landed on for `freezeSeconds`.
+    private let freeze = Locked(Freeze.none)
+    private static let freezeSeconds: Double = 0.6
+    /// Touched only on `sessionQueue`: the running glide is a 急推 set to freeze where it lands.
+    private var freezesAfterGlide = false
+    private var orbitTimer: DispatchSourceTimer?
+    private let people = PersonMask()
+    /// 冲击: when the last hit was fired, on the host clock.
+    private let impactAt = Locked<Double?>(nil)
+    /// The camera and its main lens's widest zoom, for the video queue to read the zoom from.
+    private let lens = Locked<(device: AVCaptureDevice?, wide: CGFloat)>((nil, 1))
+    /// 虚化's radius at the main lens's widest, in frame widths, growing as the zoom to `blurGrowth`, up to
+    /// `blurMostRadius`: at 1x a soft hint, at 3x a portrait lens's.
+    private static let blurRadius: CGFloat = 0.004
+    private static let blurGrowth: CGFloat = 1.3
+    private static let blurMostRadius: CGFloat = 0.03
+    /// The last frame's uncut extent and 运镜 cut, to take a tap on the picture back to the whole frame.
+    private let shownCut = Locked<(extent: CGRect?, cut: FrameCut?)>((nil, nil))
     private let captureFacing = Locked(CameraFacing.back)
     private var status = CameraStatus()
     private var device: AVCaptureDevice?
@@ -49,17 +82,26 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private var liveWanted = false
     private var videoMode = false
     private var move: CameraMove?
-    private var dollyStrength: Float = 1
+    private var moveOptions = MoveOptions()
     /// The zoom the current take started at, when it has a 运镜.
     private var moveTakeZoom: CGFloat?
     private var lastMovePublish: CFTimeInterval = 0
     private static let movePublishInterval: CFTimeInterval = 0.25
-    /// Times the main lens's widest that the zooming-out moves start at: walking toward, the face can grow to about
-    /// 2.5 times its size.
+    /// Times the main lens's widest that walking toward starts at: the face can grow to about 2.5 times its size.
     private static let zoomedStart: CGFloat = 2.5
-    /// Times its start that 慢推 ends at.
-    private static let pushReach: CGFloat = 2
-    private static let glideSeconds: Double = 6
+    /// How long 急推 takes to snap in.
+    private static let crashSeconds: Double = 0.3
+    /// Zoom blur: the shutter's share of a 30P frame, 180°, and zoom slower than this many powers of two a second
+    /// leaves no streak, so 慢推 and a walk's 希区柯克 stay sharp.
+    private static let blurShutter: Double = 1.0 / 60
+    private static let blurFloor: Double = 1
+    private static let blurMostSpread: Double = 0.15
+    /// Whip blur: turning slower than this, in radians a second, is an ordinary pan and stays sharp; the streak is
+    /// kept under this share of the frame's width.
+    private static let whipFloor: Double = 1.2
+    private static let whipMostLength: CGFloat = 0.08
+    /// Touched only on `videoQueue`.
+    private var lastBlurLog: CFTimeInterval = 0
     /// Powers of two a second, for the moves to and from a take's start.
     private static let movePresetRate: Float = 3
     /// The device is on an Apple Log format; the session is off its `.photo` preset.
@@ -72,6 +114,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             fatalError("This device has no Metal GPU.")
         }
         previewView = PreviewMetalView(device: metalDevice)
+        dolly = DollyZoom(trail: trail)
         super.init()
         dolly.onZoom = { [weak self] factor, rate in
             self?.sessionQueue.async { self?.rampMove(to: factor, rate: rate) }
@@ -80,12 +123,25 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             self?.rampMove(to: factor, rate: rate)
         }
         glide.onFinish = { [weak self] in
-            self?.publishStatus()
+            guard let self else { return }
+            if self.freezesAfterGlide, self.recorder.with({ $0 }) != nil {
+                self.freeze.with { $0 = .due(CACurrentMediaTime()) }
+            }
+            self.freezesAfterGlide = false
+            self.publishStatus()
         }
-        watch.onSighting = { [weak self] face, shot, extent in
-            self?.dolly.measure(face, shot: shot, extent: extent)
-            if let face {
-                self?.framing.sight(face, extent: extent)
+        watch.onSighting = { [weak self] sighting, shot, extent in
+            guard let self else { return }
+            if sighting?.picked == true {
+                // Someone new: kept where they are now, and 希区柯克 keeps their size from here.
+                self.framing.follow(true)
+                self.sessionQueue.async { self.applyDolly() }
+                return
+            }
+            // A body's size isn't a face's; to 希区柯克 it's a frame without a face.
+            self.dolly.measure(sighting?.body == false ? sighting?.box : nil, shot: shot, extent: extent)
+            if let sighting {
+                self.framing.sight(sighting.box, body: sighting.body, extent: extent)
             }
         }
     }
@@ -129,6 +185,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 self.status.logVideo = false
             }
             self?.dolly.disarm()
+            self?.trail.stop()
+            self?.motion.stop()
             self?.glide.stop()
             self?.watch.stop()
             self?.framing.follow(false)
@@ -184,18 +242,31 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
-    /// 希区柯克's strength for the next take: 1 holds the face's size.
-    func setDollyStrength(_ strength: Float) {
+    /// 运镜's settings for the next take; leveling and 手持感 show in the preview at once.
+    func setMoveOptions(_ options: MoveOptions) {
+        frameMoveOptions.with { $0 = options }
         sessionQueue.async { [weak self] in
-            self?.dollyStrength = strength
+            guard let self else { return }
+            let old = self.moveOptions
+            self.moveOptions = options
+            let pullMoved = options.pullStart != old.pullStart && self.move == .pullOut
+            let crashMoved = (options.crashOut != old.crashOut || options.crashReach != old.crashReach) && self.move == .crashIn
+            if pullMoved || crashMoved {
+                self.presetMove()
+            }
         }
     }
 
-    /// Zooming in starts at the main lens's widest; zooming out starts in, with room to go.
+    /// Zooming in starts at the main lens's widest; zooming out starts in, with room to go. 跟拍 stays put.
     private func presetMove() {
-        guard let move, videoMode, recorder.with({ $0 }) == nil, let device else { return }
+        guard let move, move.zooms, videoMode, recorder.with({ $0 }) == nil, let device else { return }
         let range = Self.moveRange(for: device, at: ZoomLadderBuilder.wideAngleFactor(for: device))
-        let start = move.zoomsIn ? range.lowerBound : min(range.lowerBound * Self.zoomedStart, range.upperBound)
+        let zoomedStart = switch move {
+        case .pullOut: moveOptions.pullStart
+        case .crashIn: moveOptions.crashReach
+        default: Self.zoomedStart
+        }
+        let start = move.zoomsIn(moveOptions) ? range.lowerBound : min(range.lowerBound * zoomedStart, range.upperBound)
         rampMoveEnd(to: start)
     }
 
@@ -205,6 +276,17 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let on = move != nil && videoMode && isConfigured
         let taking = on && recorder.with({ $0 }) != nil
         framing.setOn(on)
+        if on {
+            motion.start()
+        } else if motion.isOn {
+            motion.stop()
+        }
+        if taking, !trail.isOn, let device {
+            trail.start(device)
+            fieldOfView.with { $0 = device.activeFormat.videoFieldOfView }
+        } else if !taking {
+            trail.stop()
+        }
         if taking, !watch.isOn {
             watch.start()
             framing.follow(true)
@@ -228,19 +310,68 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             return
         }
         let range = Self.moveRange(for: device, at: device.videoZoomFactor)
-        dolly.arm(device: device, range: range, zoomsIn: move.zoomsIn, strength: Double(dollyStrength))
+        let strength = moveOptions.strength
+        dolly.arm(device: device, range: range, zoomsIn: move.zoomsIn, strength: Double(strength))
         PerfLog.line(String(format: "dolly armed %@ at %.2f, range %.2f-%.2f, strength %.2f", move.title,
-                            device.videoZoomFactor, range.lowerBound, range.upperBound, dollyStrength))
+                            device.videoZoomFactor, range.lowerBound, range.upperBound, strength))
     }
 
-    /// 慢推 / 慢拉 at the start of a take: in to `pushReach` times the start, or out to the lens's widest.
+    /// At the start of a take, as the options say: 慢推 in by `pushReach` times, 慢拉 out to the lens's widest,
+    /// 急推 a moment later in by `crashReach` times.
     private func startGlide() {
-        guard let move, !move.followsFace, videoMode, let device else { return }
+        guard let move, move.zooms, !move.followsFace, videoMode, let device else { return }
         let from = device.videoZoomFactor
         let range = Self.moveRange(for: device, at: from)
-        let to = move.zoomsIn ? min(from * Self.pushReach, range.upperBound) : range.lowerBound
-        glide.start(from: from, to: to, over: Self.glideSeconds, on: sessionQueue)
-        PerfLog.line(String(format: "glide %@ %.2f -> %.2f over %.0fs", move.title, from, to, Self.glideSeconds))
+        let to: CGFloat
+        let seconds: Double
+        var delay: Double = 0
+        var curve = ZoomGlide.Curve.smooth
+        freezesAfterGlide = false
+        freeze.with { $0 = .none }
+        switch move {
+        case .crashIn:
+            to = moveOptions.crashOut ? range.lowerBound : min(from * moveOptions.crashReach, range.upperBound)
+            seconds = Self.crashSeconds
+            delay = moveOptions.crashDelay
+            curve = .snap
+            freezesAfterGlide = moveOptions.crashFreeze
+        case .pullOut:
+            to = range.lowerBound
+            seconds = moveOptions.glideSeconds
+        default:
+            to = min(from * moveOptions.pushReach, range.upperBound)
+            seconds = moveOptions.glideSeconds
+        }
+        glide.start(from: from, to: to, over: seconds, after: delay, curve: curve, on: sessionQueue)
+        PerfLog.line(String(format: "glide %@ %.2f -> %.2f over %.1fs after %.1fs", move.title, from, to, seconds, delay))
+    }
+
+    /// 环绕: a 跟拍 take shows how far round the phone has circled, four times a second.
+    private func startOrbit() {
+        stopOrbit()
+        guard move == .follow, videoMode, let first = motion.sample(at: CACurrentMediaTime()) else { return }
+        let timer = DispatchSource.makeTimerSource(queue: sessionQueue)
+        timer.schedule(deadline: .now() + Self.movePublishInterval, repeating: Self.movePublishInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self, let now = self.motion.sample(at: CACurrentMediaTime()) else { return }
+            let degrees = Int(((now.yaw - first.yaw) * 180 / .pi).rounded())
+            guard degrees != self.status.orbitDegrees else { return }
+            self.status.orbitDegrees = degrees
+            self.publishStatus()
+        }
+        orbitTimer = timer
+        timer.resume()
+        status.orbitDegrees = 0
+        publishStatus()
+    }
+
+    private func stopOrbit() {
+        orbitTimer?.cancel()
+        orbitTimer = nil
+        if status.orbitDegrees != nil {
+            status.orbitDegrees = nil
+            publishStatus()
+        }
     }
 
     /// After a take the zoom goes back to where it started, ready for the next.
@@ -281,6 +412,26 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let ceiling = ZoomLadderBuilder.clamped(.greatestFiniteMagnitude, on: device)
         let upper = min(switches.first { $0 > zoom + 0.001 }.map { $0 * 0.98 } ?? ceiling, ceiling)
         return lower...max(lower, upper)
+    }
+
+    /// 冲击: a hit on the beat mid-take with 运镜 on, in the preview and the movie.
+    func impact() {
+        guard recorder.with({ $0 }) != nil, shownCut.with({ $0.cut }) != nil else { return }
+        impactAt.with { $0 = CACurrentMediaTime() }
+    }
+
+    /// 运镜 follows whatever is at `point`, normalized to the picture on screen with y down: now if mid-take,
+    /// otherwise from the next take's start.
+    func pickSubject(atPicturePoint point: CGPoint) {
+        guard let spot = shownCut.with({ shown -> CGPoint? in
+            guard let extent = shown.extent, extent.width > 1, extent.height > 1 else { return nil }
+            var place = CGPoint(x: extent.minX + point.x * extent.width, y: extent.minY + (1 - point.y) * extent.height)
+            if let fill = shown.cut?.fill(extent) {
+                place = place.applying(fill.inverted())
+            }
+            return CGPoint(x: (place.x - extent.minX) / extent.width, y: (place.y - extent.minY) / extent.height)
+        }) else { return }
+        watch.pick(CGPoint(x: min(max(spot.x, 0), 1), y: min(max(spot.y, 0), 1)))
     }
 
     func focus(atDevicePoint point: CGPoint) {
@@ -343,16 +494,22 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let hold = parameters.with { $0.hold }
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            let sound = self.session.outputs.contains(self.audioOutput)
+            let lapse = self.frameRate == .lapse
+            // A sped-up take would chirp; 延时 is silent.
+            let sound = self.session.outputs.contains(self.audioOutput) && !lapse
                 ? self.audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mov)
                 : nil
             self.recordingHold.with { $0 = hold }
             let fps = self.device.flatMap(Self.lockedFrameRate) ?? 30
-            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound, frameRate: fps) }
+            self.recorder.with {
+                $0 = VideoRecorder(url: url, audioSettings: sound, frameRate: fps,
+                                   speedUp: lapse ? VideoFrameRate.lapseSpeed : 1)
+            }
             // The take keeps the face at its size when it starts, or glides from the zoom then.
             self.moveTakeZoom = self.move != nil && self.videoMode ? self.device?.videoZoomFactor : nil
             self.applyMove()
             self.startGlide()
+            self.startOrbit()
         }
     }
 
@@ -367,6 +524,40 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         device.activeVideoMinFrameDuration = duration
         device.activeVideoMaxFrameDuration = duration
         device.unlockForConfiguration()
+        applyStabilization()
+    }
+
+    /// Steadiest first. Cinematic modes crop in and hold frames back to smooth over them.
+    private static let stabilizationModes: [AVCaptureVideoStabilizationMode] = [.cinematicExtended, .cinematic, .standard]
+
+    /// Video mode steadies the frames the preview, 运镜 and the movie all come from; photo mode keeps them as shot, so
+    /// the viewfinder doesn't lag the hand. Depends on the format, so it follows every format change; never mid-take.
+    private func applyStabilization() {
+        guard isConfigured, let device, recorder.with({ $0 }) == nil,
+              let connection = videoOutput.connection(with: .video) else { return }
+        let format = device.activeFormat
+        let wanted = videoMode && connection.isVideoStabilizationSupported
+            ? Self.stabilizationModes.first { format.isVideoStabilizationModeSupported($0) } ?? .off
+            : .off
+        guard connection.preferredVideoStabilizationMode != wanted else { return }
+        connection.preferredVideoStabilizationMode = wanted
+        // The active mode settles once the session has taken the change.
+        sessionQueue.asyncAfter(deadline: .now() + 1) {
+            PerfLog.line("single: stabilization wanted \(Self.describe(wanted)), active \(Self.describe(connection.activeVideoStabilizationMode)), format \(CaptureFormatLog.describe(format, on: device))")
+        }
+    }
+
+    private static func describe(_ mode: AVCaptureVideoStabilizationMode) -> String {
+        switch mode {
+        case .off: "off"
+        case .standard: "standard"
+        case .cinematic: "cinematic"
+        case .cinematicExtended: "cinematicExtended"
+        case .cinematicExtendedEnhanced: "cinematicExtendedEnhanced"
+        case .previewOptimized: "previewOptimized"
+        case .auto: "auto"
+        default: "mode \(mode.rawValue)"
+        }
     }
 
     /// The rate the device is pinned to, or nil when it is free to vary.
@@ -385,6 +576,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             // A look picked during the take may want the other color space.
             self?.applyLogVideo()
             self?.glide.stop()
+            self?.stopOrbit()
+            self?.freeze.with { $0 = .none }
             self?.applyMove()
             self?.returnMoveZoom()
             guard let active else {
@@ -534,14 +727,44 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             : nil
         let uncut = log?.display ?? FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
         // 运镜 measures the whole frame, so the face's place and size don't depend on where the cut is.
-        dolly.noteFrame()
-        watch.offer(uncut, at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
-        let cut = framing.cut(for: uncut.extent, at: CACurrentMediaTime())
-        let source = cut.map { FrameImageMaker.cut(uncut, to: $0) } ?? uncut
-        let scene = cut.flatMap { rect in log.map { FrameImageMaker.cut($0.scene, to: rect) } } ?? log?.scene
+        trail.noteFrame()
+        let presented = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let shot = presented.isValid ? presented.seconds : CACurrentMediaTime()
+        watch.offer(uncut, at: presented)
+        let options = frameMoveOptions.with { $0 }
+        let turn = motion.sample(at: shot)
+        let hold = recorder.with({ $0 }) != nil ? recordingHold.with { $0 } : nil
+        let tilt = horizon.tilt(turn, at: shot, mode: options.horizon, hold: hold)
+        // A hit lands on the frames shot after the tap, however late they arrive.
+        let sinceHit = impactAt.with { $0 }.map { shot - $0 }
+        let hit = sinceHit.flatMap(ImpactShake.offset(after:))
+        let sway = options.handheld ? HandheldSway.offset(at: shot).adding(hit) : hit
+        let cut = framing.cut(for: uncut.extent, at: CACurrentMediaTime(), tilt: tilt, sway: sway)
+        shownCut.with { $0 = (uncut.extent, cut) }
+        var source = cut.map { FrameImageMaker.cut(uncut, to: $0) } ?? uncut
+        var scene = cut.flatMap { cut in log.map { FrameImageMaker.cut($0.scene, to: cut) } } ?? log?.scene
+        if let spread = zoomBlurSpread(at: presented) {
+            // The zoom goes toward the middle of the whole frame, wherever the cut is.
+            let middle = CGPoint(x: uncut.extent.midX, y: uncut.extent.midY)
+            let center = cut?.fill(uncut.extent).map { middle.applying($0) } ?? middle
+            source = FrameImageMaker.zoomBlurred(source, center: center, spread: spread)
+            scene = scene.map { FrameImageMaker.zoomBlurred($0, center: center, spread: spread) }
+        }
+        if let whip = whipBlur(turn, at: shot, frame: uncut.extent, cut: cut) {
+            source = FrameImageMaker.motionBlurred(source, length: whip.length, angle: whip.angle)
+            scene = scene.map { FrameImageMaker.motionBlurred($0, length: whip.length, angle: whip.angle) }
+        }
+        if cut != nil, options.backgroundBlur, let mask = people.mask(offering: source) {
+            let radius = backgroundBlurRadius(width: source.extent.width)
+            source = FrameImageMaker.backgroundBlurred(source, people: mask, radius: radius)
+            scene = scene.map { FrameImageMaker.backgroundBlurred($0, people: mask, radius: radius) }
+        }
         thumbnailTap.offer(source)
         let faces = renderParameters.beauty > 0 ? faceTracker.faces(offering: source) : []
-        let graded = FrameImageMaker.graded(source, scene: scene, faces: faces, parameters: renderParameters)
+        let flash = sinceHit.map(ImpactShake.flash(after:)) ?? 0
+        let graded = held(FrameImageMaker.flashed(FrameImageMaker.graded(source, scene: scene, faces: faces,
+                                                                         parameters: renderParameters), amount: flash),
+                          shot: shot)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         previewView.draw(image: framed, token: previewToken.with { $0 })
         if let active = recorder.with({ $0 }) {
@@ -549,9 +772,82 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             let recorded = hold == .portrait
                 ? framed
                 : framedImage(FrameImageMaker.turned(graded, hold: hold), parameters: renderParameters, synchronousCaption: true)
-            active.appendVideo(recorded, at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+            active.appendVideo(recorded, at: presented)
         }
-        framePerf.add(["build": PerfLog.ms(since: start)])
+        // How long after the shot the frame got here: stabilization holds frames back.
+        var perf = ["build": PerfLog.ms(since: start)]
+        if presented.isValid {
+            perf["age"] = (start - presented.seconds) * 1000
+        }
+        framePerf.add(perf)
+    }
+
+    /// 虚化 grows with the focal length, as a lens's out-of-focus blur does at the same framing, so a push in melts
+    /// the background away and a pull out brings it back.
+    private func backgroundBlurRadius(width: CGFloat) -> CGFloat {
+        let (device, wide) = lens.with { $0 }
+        let zoom = (device?.videoZoomFactor ?? wide) / max(wide, 0.01)
+        return min(Self.blurRadius * pow(max(zoom, 1), Self.blurGrowth), Self.blurMostRadius) * width
+    }
+
+    /// 定格: from the first frame shot after a freezing 急推 lands, the same picture for a moment. The picture is
+    /// rendered into an image of its own, so no camera buffer is held meanwhile.
+    private func held(_ graded: CIImage, shot: Double) -> CIImage {
+        let state = freeze.with { $0 }
+        switch state {
+        case .none:
+            return graded
+        case .due(let at):
+            guard shot >= at, let still = previewView.makeImage(graded)?.cgImage else { return graded }
+            let origin = graded.extent.origin
+            let frozen = CIImage(cgImage: still).transformed(by: CGAffineTransform(translationX: origin.x, y: origin.y))
+            freeze.with { $0 = .holding(frozen, until: shot + Self.freezeSeconds) }
+            PerfLog.line("freeze at \(String(format: "%.2f", shot))")
+            return frozen
+        case .holding(let frozen, let until):
+            guard shot < until else {
+                freeze.with { $0 = .none }
+                return graded
+            }
+            return frozen
+        }
+    }
+
+    /// Mid-take with a 运镜, how far the zoom moved while this frame's shutter was open, past what reads as still.
+    private func zoomBlurSpread(at shot: CMTime) -> CGFloat? {
+        guard shot.isValid, let speed = trail.stopsPerSecond(at: shot.seconds) else { return nil }
+        let fast = abs(speed) - Self.blurFloor
+        guard fast > 0 else { return nil }
+        let spread = min(1 - pow(2, -fast * Self.blurShutter), Self.blurMostSpread)
+        let now = CACurrentMediaTime()
+        if now - lastBlurLog >= 0.1 {
+            lastBlurLog = now
+            PerfLog.line(String(format: "zoom blur %+.1f stops/s, spread %.3f", speed, spread))
+        }
+        return CGFloat(speed > 0 ? spread : -spread)
+    }
+
+    /// Mid-take with a 运镜, how far the picture slid while this frame's shutter was open as the phone turned, in
+    /// pixels of the cut picture, and which way; nil for an ordinary pan.
+    private func whipBlur(_ turn: MotionTrail.Sample?, at shot: Double, frame extent: CGRect, cut: FrameCut?)
+        -> (length: CGFloat, angle: CGFloat)? {
+        guard let turn, trail.isOn else { return nil }
+        let fast = hypot(turn.rate.x, turn.rate.y) - Self.whipFloor
+        let view = Double(fieldOfView.with { $0 }) * .pi / 180
+        guard fast > 0, view > 0 else { return nil }
+        // Turning about the phone's long axis slides the picture across it; tipping, along it. The format's view
+        // is across its long side, which is the portrait frame's height.
+        let focal = Double(max(extent.width, extent.height)) / 2 * Double(trail.zoom(at: shot)) / tan(view / 2)
+        let enlarged = cut.map { Double(extent.width / $0.size.width) } ?? 1
+        let length = min(CGFloat(fast * Self.blurShutter * focal * enlarged), Self.whipMostLength * extent.width)
+        let angle = CGFloat(atan2(-turn.rate.x, turn.rate.y)) - (cut?.angle ?? 0)
+        let now = CACurrentMediaTime()
+        if now - lastBlurLog >= 0.1 {
+            lastBlurLog = now
+            PerfLog.line(String(format: "whip blur %.1f rad/s, %.0f px at %.0f°", fast + Self.whipFloor, length,
+                                angle * 180 / .pi))
+        }
+        return (length, angle)
     }
 
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -560,7 +856,15 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         PerfLog.line("camera dropped frame: \(reason.map { "\($0)" } ?? "unknown")")
     }
 
+    /// Photo callbacks arrive on the main thread; the still is graded on `photoQueue` so the interface keeps drawing
+    /// and a slow 银幕 still can't trip the watchdog. The shot's other callbacks follow it there to keep their order.
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        photoQueue.async { [weak self] in
+            self?.finishPhoto(photo, error: error)
+        }
+    }
+
+    private func finishPhoto(_ photo: AVCapturePhoto, error: Error?) {
         if let error {
             publishFailure(error.localizedDescription)
             return
@@ -627,7 +931,12 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         resolvedSettings: AVCaptureResolvedPhotoSettings,
         error: Error?
     ) {
-        let id = resolvedSettings.uniqueID
+        photoQueue.async { [weak self] in
+            self?.finishLiveMovie(outputFileURL, photoDisplayTime: photoDisplayTime, id: resolvedSettings.uniqueID, error: error)
+        }
+    }
+
+    private func finishLiveMovie(_ outputFileURL: URL, photoDisplayTime: CMTime, id: Int64, error: Error?) {
         guard error == nil else {
             try? FileManager.default.removeItem(at: outputFileURL)
             failLive(id)
@@ -648,13 +957,15 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     /// A shot whose still never arrived has no review screen waiting for it.
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
         let id = resolvedSettings.uniqueID
-        let orphan = liveShots.with { shots -> LiveShot? in
-            guard let shot = shots[id], shot.still == nil else { return nil }
-            shots[id] = nil
-            return shot
-        }
-        if let movie = orphan?.movie?.url {
-            try? FileManager.default.removeItem(at: movie)
+        photoQueue.async { [weak self] in
+            let orphan = self?.liveShots.with { shots -> LiveShot? in
+                guard let shot = shots[id], shot.still == nil else { return nil }
+                shots[id] = nil
+                return shot
+            }
+            if let movie = orphan?.movie?.url {
+                try? FileManager.default.removeItem(at: movie)
+            }
         }
     }
 
@@ -801,7 +1112,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
         session.addInput(input)
         device = next
+        lens.with { $0 = (next, ZoomLadderBuilder.wideAngleFactor(for: next)) }
         faceTracker.reset()
+        people.reset()
         applyInitialZoom(on: next)
         status.facing = facing
         parameters.with { $0.orientation = Self.orientation(for: facing) }
@@ -872,6 +1185,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
         session.addInput(input)
         device = camera
+        lens.with { $0 = (camera, ZoomLadderBuilder.wideAngleFactor(for: camera)) }
 
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true

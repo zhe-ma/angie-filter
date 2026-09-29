@@ -40,6 +40,9 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `ZoomStop` | 变焦条上的一档，带等效焦段 |
 | `CameraStatus` | 界面看到的朝向、变焦、闪光灯、权限 |
 | `HoldOrientation` | 手机怎么拿：竖、上端朝右、上端朝左、倒。成片按它转正，图标按它转向 |
+| `VideoFrameRate` | 录像帧率：30P、24P、延时（单摄，6 倍速、无声） |
+| `CameraMove` | 六种运镜：向后走、向前走、慢推、慢拉、急推、跟拍；标题和按设置说的横幅 |
+| `MoveOptions` / `HorizonMode` | 运镜设置：希区柯克强度、慢推慢拉时长幅度、急推时机倍数、水平（关 / 锁平 / 匀转）、手持感 |
 | `Look` | 一款滤镜。界面文案叫滤镜 |
 | `GrainPlateKind` | 无颗粒、细板、粗板 |
 | `LookFinish` | 目录里的褪色、光晕、颗粒、暗角、柔光 |
@@ -69,14 +72,21 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 
 | 类型 | 作用 |
 | --- | --- |
-| `CameraSessionController` | 配置相机会话，收预览帧和照片，回传状态 |
+| `CameraSessionController` | 配置相机会话，收预览帧和照片，回传状态；录像模式给视频输出开系统防抖（`applyStabilization`）；照片成片在 `angie.camera.photo` 上渲染；运镜的变焦模糊、甩镜模糊在 `captureOutput` 里接在裁切之后 |
 | `DualSessionController` | 前后广角同时采集。模拟器上不启动 |
 | `ThumbnailFrameTap` | 有请求时把视频队列上的下一帧拷成宽 160 的位图给滤镜条，不拿相机缓冲 |
 | `FaceTracker` | 美颜的人脸检测。取景每秒最多 10 次，拷成小图后在自己的队列上跑 Vision；成片同步测一次。拷图和检测也给 `FaceWatch` 用 |
-| `FaceWatch` | 运镜跟的那张脸：录制中每帧在 `angie.follow` 上检测整幅画面，选定一张一直跟，结果交给 `DollyZoom` 和 `FaceFraming` |
-| `FaceFraming` | 跟拍：运镜开着时画面裁进 1.25 倍，录制中裁切框跟着人脸平移，保持开拍时的构图；`FrameImageMaker.cut` 把框放大回原尺寸 |
+| `FaceWatch` | 运镜跟的人：录制中每帧在 `angie.follow` 上检测整幅画面，选定一张脸一直跟，没脸时认上半身，点选时跟点中的脸、人体或用 Vision 跟住那块地方；结果交给 `DollyZoom`（只要脸）和 `FaceFraming` |
+| `PersonMask` | 虚化的人像遮罩：在 `angie.segment` 上跑人像分割，取景拿最新一张 |
+| `ImpactShake` | 冲击：裁切框的猛推、抖动和白光随时间的量 |
+| `FaceFraming` | 跟拍：运镜开着时画面裁进 1.25 倍，录制中裁切框跟着人脸平移，保持开拍时的构图；叠上锁平的角度和手持感的飘动，角度优先、平移让路，输出 `FrameCut` |
+| `FrameCut` | 裁切框：中心、大小、角度；算把框放大回整幅的变换、转过某角时占的范围、最多能转多少 |
 | `DollyZoom` | 希区柯克变焦：由这一帧拍到时的变焦 ÷ 人脸大小得出距离，经 alpha-beta 滤波后算目标变焦，一条之内只许单向变化，交给会话去 `ramp`。会话只在录制中启用它 |
-| `ZoomGlide` | 慢推 / 慢拉：录制开始后按对数变焦走 smoothstep，6 秒从起点到终点，每 1/30 秒一步交给会话去 `ramp`。运镜的起点、终点和录完回到起点都由会话按 `CameraMove` 设置 |
+| `ZoomTrail` | 录制中每帧记一次设备变焦，按帧的呈现时间插值出这一帧拍到时的变焦和每秒变几档，给希区柯克和变焦模糊用 |
+| `ZoomGlide` | 慢推 / 慢拉 / 急推：录制开始后（急推先等一会儿）按对数变焦走 smoothstep 或指数缓出，每 1/60 秒一步交给会话去 `ramp`。运镜的起点、终点和录完回到起点都由会话按 `CameraMove` 和 `MoveOptions` 设置 |
+| `MotionTrail` | 运镜开着时以 100 Hz 读设备运动，按帧的呈现时间插值出翻滚角和角速度 |
+| `HorizonLock` | 锁平 / 匀转：每帧算裁切框逆着翻滚要转多少 |
+| `HandheldSway` | 手持感：裁切框随时间缓缓平移、微转、微缩 |
 | `PhotoOrientation` | 照片连接设成竖拍、不镜像，读图时按 EXIF 转正 |
 | `ZoomLadderBuilder` | 从当前设备读出实体镜头档和推荐焦段，换算等效焦段 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色；美颜打开时在调色前后接上 `SkinRetouch` |
@@ -85,7 +95,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `GradeApplicator` | 颜色、收尾，再按强度溶回原图 |
 | `ColorGrader` | LUT 走 `CIColorCubeWithColorSpace`（sRGB），内置款调用 Core Image 滤镜，实验室交给 `EffectChain` |
 | `EffectChain` | 实验室 22 款的处理链，来源和数值见 [competitor-effects.md](competitor-effects.md) |
-| `EffectKernels` | 从 `default.metallib` 读 `EffectKernels.metal` 里的 kernel |
+| `EffectKernels` | 从 `default.metallib` 读 `EffectKernels.metal` 里的 kernel；运镜的变焦模糊 `zoomBlur` 也在这里 |
 | `AutoLevels` | Lampa 的直方图黑白点和五点曲线 |
 | `FilmFinish` | 颜色之后的褪色、光晕、颗粒、暗角，只用系统滤镜 |
 | `ScreenPrint` | 银幕款：还原场景光（或接 ProRAW、Apple Log 的场景光），柔光、光晕，压回显示值，印片 LUT，逐帧颗粒 |
@@ -99,7 +109,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `FrameCaptionRenderer` | 主线程用 Core Graphics 画底栏 |
 | `PreviewMetalView` | 在后台队列把 `CIImage` 画进 `CAMetalLayer`。文件名是 `CoreImageFrameRenderer.swift` |
 | `PhotoLibraryStore` | 追加到最近项目。HEIC，失败则 JPEG 0.92。实况写带配对标识的 HEIC，照片和视频一起存 |
-| `VideoRecorder` | 录像：把画进取景的图写成 HEVC，带 AAC 声音，第一帧定尺寸 |
+| `VideoRecorder` | 录像：把画进取景的图写成 HEVC，带 AAC 声音，第一帧定尺寸；延时时按时间每 N 帧留一帧、和前两帧混合、压缩时间戳 |
 | `LivePhotoMovieRenderer` | 把实况短视频逐帧过成片管线，写回 HEVC，带内容标识和静图时刻 |
 | `PhotoLibraryError` | 相册写入失败 |
 | `Locked` | `NSLock` 包一层，用来过队列传值 |
