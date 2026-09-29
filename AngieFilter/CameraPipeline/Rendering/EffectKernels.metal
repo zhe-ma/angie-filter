@@ -112,16 +112,48 @@ float4 screenExpand(sample_t color, float white, float grayScale) {
     return float4(linear * (s * grayScale / n), color.a);
 }
 
+// Colorimetric scene light is plainer than the phone's own rendering, which the preview is expanded from.
+// Scaling chroma around luminance by `amount` brings the print's colorfulness back to the preview's.
+static float3 saturated(float3 scene, float amount) {
+    float y = dot(scene, p3Luma);
+    return max(y + amount * (scene - y), 0.0);
+}
+
 // A linear ProRAW development to the same scene light: `gain` puts middle gray at 0.18.
 // The sensor clips about four stops over gray, where a negative keeps going, so past `knee`
 // the norm climbs `slope` times faster and a clipped lamp lands near display white's 12.
-float4 screenLinear(sample_t color, float gain, float knee, float slope) {
-    float3 scene = decodeTransfer(max(color.rgb, 0.0)) * gain;
+// The input is extended: values over 1 are highlights, not errors.
+float4 screenLinear(sample_t color, float gain, float saturation, float knee, float slope) {
+    float3 scene = saturated(decodeTransfer(max(color.rgb, 0.0)) * gain, saturation);
     float n = whiteness(scene);
     if (n > knee) {
         scene *= (n + (slope - 1.0) * (n - knee)) / n;
     }
     return float4(scene, color.a);
+}
+
+// Apple Log Profile White Paper, 2023. Same constants as Tools/ImportStormCamLUTs.swift.
+static float appleLogDecode(float p) {
+    const float r0 = -0.05641088;
+    const float rt = 0.01;
+    const float c = 47.28711236;
+    const float beta = 0.00964052;
+    const float gamma = 0.08550479;
+    const float delta = 0.69336945;
+    if (p >= c * (rt - r0) * (rt - r0)) {
+        return exp2((p - delta) / gamma) - beta;
+    }
+    return p > 0.0 ? sqrt(p / c) + r0 : r0;
+}
+
+// Apple Log video frames, read with no color management, to scene light in linear Display P3.
+// Apple Log already is scene light with 18% gray at 0.18; code value 1 is about 12, the same white the expansion uses.
+float4 screenAppleLog(sample_t color, float gain, float saturation) {
+    float3 wide = float3(appleLogDecode(color.r), appleLogDecode(color.g), appleLogDecode(color.b));
+    float3 p3 = float3(dot(float3(1.343578, -0.282180, -0.061399), wide),
+                       dot(float3(-0.065297, 1.075788, -0.010490), wide),
+                       dot(float3(0.002822, -0.019598, 1.016777), wide));
+    return float4(saturated(max(p3, 0.0) * gain, saturation), color.a);
 }
 
 // Exact inverse of `screenExpand`. Light pushed past scene white clips to display white.

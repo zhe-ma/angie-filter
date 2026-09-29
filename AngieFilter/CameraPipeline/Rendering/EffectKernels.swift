@@ -15,6 +15,7 @@ enum EffectKernels {
     static let screenExpand = color("screenExpand")
     static let screenCompress = color("screenCompress")
     static let screenLinear = color("screenLinear")
+    static let screenAppleLog = color("screenAppleLog")
     static let screenMist = color("screenMist")
     static let screenBright = color("screenBright")
     static let screenHalation = color("screenHalation")

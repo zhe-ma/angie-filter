@@ -3,8 +3,8 @@ import QuartzCore
 
 /// The 银幕 looks: scene light goes through a mist filter and the negative's halation, back to display light,
 /// then the Vision3 print LUT, then per-frame grain, fade, and vignette.
-/// Scene light is either a ProRAW still developed linear (`sceneLight(fromLinear:baselineExposure:)`) or
-/// the processed photo expanded the way Tools/BakeScreenLUTs.py bakes against. On the expanded path with
+/// Scene light is a ProRAW still developed linear (`sceneLight(fromLinear:baselineExposure:)`), an Apple Log
+/// video frame (`sceneLight(fromAppleLog:)`), or the processed photo expanded the way Tools/BakeScreenLUTs.py bakes against. On the expanded path with
 /// mist and halation at zero, the round trip is exact and the LUT sees the photo unchanged.
 enum ScreenPrint {
     private static let sceneWhite: Float = 12
@@ -29,13 +29,16 @@ enum ScreenPrint {
     /// Grain moves to a new place 24 times a second.
     private static let grainRate: Double = 24
 
-    /// ProRAW is developed this many stops down so its highlight headroom stays under 1 on the way in.
-    static let rawPullStops: Float = 2
     /// On top of the file's baseline exposure. Without local tone mapping the file's own exposure prints
     /// about half a stop darker than the phone's photo and the preview.
     private static let rawExposureStops: Float = 0.5
     private static let rawKnee: Float = 1.2
     private static let rawSlope: Float = 4
+    /// On top of the camera's own exposure for Apple Log video.
+    private static let logExposureStops: Float = 0
+    /// ProRAW and Apple Log are colorimetric; the preview comes from the phone's rendering, which adds color.
+    /// At 1.3 the print of the ProRAW sample has the same mean Oklab chroma as the print of Apple's rendering.
+    private static let sceneSaturation: Float = 1.3
 
     static func apply(
         _ image: CIImage,
@@ -59,11 +62,21 @@ enum ScreenPrint {
         return FilmFinish.apply(printed, adjustment: finish, grainPlate: grainPlate, quality: quality, grainShift: grainShift())
     }
 
-    /// Scene light from a ProRAW development with no tone curve, no local tone mapping,
-    /// baseline exposure 0, and `rawPullStops` of exposure taken off.
+    /// Scene light from a ProRAW development with no tone curve, no local tone mapping, and baseline exposure 0.
     static func sceneLight(fromLinear image: CIImage, baselineExposure: Float) -> CIImage? {
-        let gain = exp2(rawPullStops + baselineExposure + rawExposureStops)
-        return EffectKernels.screenLinear?.apply(extent: image.extent, arguments: [image, gain, rawKnee, rawSlope])
+        let gain = exp2(baselineExposure + rawExposureStops)
+        return EffectKernels.screenLinear?.apply(extent: image.extent, arguments: [image, gain, sceneSaturation, rawKnee, rawSlope])
+    }
+
+    /// Scene light from an Apple Log frame read with no color management.
+    static func sceneLight(fromAppleLog image: CIImage) -> CIImage? {
+        EffectKernels.screenAppleLog?.apply(extent: image.extent, arguments: [image, exp2(logExposureStops), sceneSaturation])
+    }
+
+    /// Scene light as an ordinary display image: the thumbnails, the intensity mix, and any look other than 银幕 use it.
+    /// Its expansion gives the scene back, so a 银幕 print of it matches the print of the scene.
+    static func displayLight(fromScene scene: CIImage) -> CIImage? {
+        compressed(scene)
     }
 
     private static func expanded(_ image: CIImage) -> CIImage? {

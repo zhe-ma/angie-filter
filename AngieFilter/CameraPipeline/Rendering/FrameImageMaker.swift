@@ -10,6 +10,16 @@ enum FrameImageMaker {
         return prepared(geometry(oriented, parameters: parameters), quality: parameters.quality)
     }
 
+    /// An Apple Log frame as scene light, plus the display image made from it for everything that isn't a 银幕 print.
+    /// The frame is read as plain code values: the Log curve is decoded by our own kernel.
+    static func logSources(from pixelBuffer: CVPixelBuffer, parameters: RenderParameters) -> (display: CIImage, scene: CIImage)? {
+        let codes = CIImage(cvPixelBuffer: pixelBuffer, options: [.colorSpace: NSNull()]).oriented(parameters.orientation)
+        let cut = prepared(geometry(codes, parameters: parameters), quality: parameters.quality)
+        guard let scene = ScreenPrint.sceneLight(fromAppleLog: cut),
+              let display = ScreenPrint.displayLight(fromScene: scene) else { return nil }
+        return (display, scene)
+    }
+
     static func sourceImage(from photoImage: CIImage, parameters: RenderParameters) -> CIImage {
         prepared(geometry(photoImage, parameters: parameters), quality: parameters.quality)
     }

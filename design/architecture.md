@@ -127,7 +127,7 @@ flowchart TB
 
 `effect` 里会移动像素的配方（鱼眼）先在 `GradeApplicator` 里弯曲，强度混合用弯曲后的图，避免重影。
 
-`LookFinish` 是目录里的褪色、光晕、颗粒、颗粒板和暗角默认值。`LookAdjustment.baseline` 从它和 `Look.strength` 得出第一次套上时的调节。所有非原图款的面板都是强度、褪色、颗粒、暗角，`Look.showsHalation` 为真时多一根光晕，`Look.showsDiffusion`（`grade` 是 `.screen`）为真时多一根柔光。`.screen` 款由 `ScreenPrint` 处理：场景光里的柔光和光晕、印片 LUT、逐帧颗粒。选中银幕款时单摄拍 ProRAW，`ProRAWDevelopment` 显影出的场景光经 `GradeApplicator.apply(scene:)` 直接交给 `ScreenPrint`。
+`LookFinish` 是目录里的褪色、光晕、颗粒、颗粒板和暗角默认值。`LookAdjustment.baseline` 从它和 `Look.strength` 得出第一次套上时的调节。所有非原图款的面板都是强度、褪色、颗粒、暗角，`Look.showsHalation` 为真时多一根光晕，`Look.showsDiffusion`（`grade` 是 `.screen`）为真时多一根柔光。`.screen` 款由 `ScreenPrint` 处理：场景光里的柔光和光晕、印片 LUT、逐帧颗粒。选中银幕款时单摄拍 ProRAW，`ProRAWDevelopment` 显影出的场景光经 `GradeApplicator.apply(scene:)` 直接交给 `ScreenPrint`；录像模式下改录 Apple Log，`FrameImageMaker.logSources` 把每帧解成场景光，走同一个入口。
 
 调节后的数值按滤镜 id 记在 `CameraViewModel` 的内存字典里，不写磁盘。点保存才写入。收起或不保存就回到上次保存的值；没有保存过则回到默认。缩略图始终用默认参数，方便和改过的画面对照。
 

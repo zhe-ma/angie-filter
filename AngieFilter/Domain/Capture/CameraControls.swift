@@ -107,4 +107,6 @@ struct CameraStatus: Equatable, Sendable {
     /// The current camera and preset can record a Live Photo movie. Never true for dual.
     var liveSupported = false
     var liveOn = false
+    /// Video mode with a 银幕 look is capturing Apple Log. Single camera only.
+    var logVideo = false
 }

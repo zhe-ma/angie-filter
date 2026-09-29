@@ -135,7 +135,7 @@
 
 实验室的 22 款和 Halide 的 6 款（Valencia、Rembrandt、Nova、Zephyr、Chroma Noir、Scarlet）不在这张表里，目录是 `LabLooks.json`，每款的来源和数值见 [competitor-effects.md](competitor-effects.md)。这些款先上机看效果，好的再转进正式分类。
 
-「银幕」的 7 款（2383 放映、50D 日景、200T 暖印、黄金时刻、500T 夜戏、日光 500T、2393 高级拷贝）也不在这张表里，目录是 `ScreenLooks.json`，做法见 [rendering.md](rendering.md) 的「银幕」一节。柔光和光晕在场景光里做，只从真正的亮光源长出来；颗粒逐帧跳动。拍照时改拍 ProRAW，不经过手机的局部色调映射，成片比取景暗部更深、反差更大；开着实况时仍拍普通照片。它是电影质感的新路线，和「电影感」并存，不替换原有分类。
+「银幕」的 7 款（2383 放映、50D 日景、200T 暖印、黄金时刻、500T 夜戏、日光 500T、2393 高级拷贝）也不在这张表里，目录是 `ScreenLooks.json`，做法见 [rendering.md](rendering.md) 的「银幕」一节。柔光和光晕在场景光里做，只从真正的亮光源长出来；颗粒逐帧跳动。拍照时改拍 ProRAW，不经过手机的局部色调映射，成片比取景暗部更深、反差更大；开着实况时仍拍普通照片。录像时改录 Apple Log，取景和录下来的都是从 Log 场景光印出来的，帧率按钮下出现「LOG」；只有 iPhone 15 Pro 及以后的机型有，双摄不录 Log。它是电影质感的新路线，和「电影感」并存，不替换原有分类。
 
 来源一栏是 HaldCLUT 的文件名或 Core Image 滤镜名。强度、颗粒、暗角和光晕的默认值见 `Looks.json`，做法见 [rendering.md](rendering.md)。
 

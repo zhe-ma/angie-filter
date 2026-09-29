@@ -38,11 +38,13 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let audioQueue = DispatchQueue(label: "angie.camera.audio")
     private let recorder = Locked<VideoRecorder?>(nil)
     private let recordingHold = Locked(HoldOrientation.portrait)
-    /// A 银幕 look is selected, so stills are shot as ProRAW where the camera has it.
-    private let wantsSceneStills = Locked(false)
+    /// A 银幕 look is selected: stills are shot as ProRAW, and video as Apple Log, where the camera has them.
+    private let screenSelected = Locked(false)
     /// Touched only on `sessionQueue`.
     private var liveWanted = false
     private var videoMode = false
+    /// The device is on an Apple Log format; the session is off its `.photo` preset.
+    private var logActive = false
     private var frameRate = VideoFrameRate.thirty
     private var audioInput: AVCaptureDeviceInput?
 
@@ -61,12 +63,13 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             return value.lookID
         }
         let screen = LookLibrary.look(id: lookID).isScreen
-        let changed = wantsSceneStills.with { wanted -> Bool in
+        let changed = screenSelected.with { wanted -> Bool in
             defer { wanted = screen }
             return wanted != screen
         }
         if changed {
             sessionQueue.async { [weak self] in
+                self?.applyLogVideo()
                 self?.applyProRAW()
             }
         }
@@ -84,6 +87,13 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     func stop(completion: (() -> Void)? = nil) {
         sessionQueue.async { [weak self] in
+            if let self, self.logActive {
+                // Dual takes the same camera and sets its own format; the single session comes back on the photo preset.
+                self.session.beginConfiguration()
+                self.leaveLog()
+                self.session.commitConfiguration()
+                self.status.logVideo = false
+            }
             if let self, self.session.isRunning {
                 self.session.stopRunning()
                 self.status.isRunning = false
@@ -152,7 +162,14 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.videoMode = on
-            self.applyExtrasAskingForMicrophone(on)
+            // Live Photo goes off before the Log format comes in, and the photo preset is back before Live Photo returns.
+            if on {
+                self.applyExtrasAskingForMicrophone(on)
+                self.applyLogVideo()
+            } else {
+                self.applyLogVideo()
+                self.applyExtrasAskingForMicrophone(on)
+            }
         }
     }
 
@@ -203,6 +220,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 defer { recorder = nil }
                 return recorder
             }
+            // A look picked during the take may want the other color space.
+            self?.applyLogVideo()
             guard let active else {
                 DispatchQueue.main.async { completion(nil) }
                 return
@@ -250,21 +269,85 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     /// ProRAW only for a 银幕 look, and not for Live Photos, which ProRAW can't carry.
     private func rawPixelFormat() -> OSType? {
-        guard wantsSceneStills.with({ $0 }), photoOutput.isAppleProRAWEnabled, !photoOutput.isLivePhotoCaptureEnabled else { return nil }
+        guard screenSelected.with({ $0 }), photoOutput.isAppleProRAWEnabled, !photoOutput.isLivePhotoCaptureEnabled else { return nil }
         return photoOutput.availableRawPhotoPixelFormatTypes.first { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }
     }
 
     /// ProRAW is on only while a 银幕 look is selected: turning it on rebuilds the capture pipeline,
     /// and every other look keeps the photo output exactly as before.
     private func applyProRAW() {
-        guard isConfigured else { return }
-        let wanted = wantsSceneStills.with { $0 } && photoOutput.isAppleProRAWSupported
+        guard isConfigured, !logActive else { return }
+        let wanted = screenSelected.with { $0 } && photoOutput.isAppleProRAWSupported
         guard photoOutput.isAppleProRAWEnabled != wanted else { return }
         let start = PerfLog.now()
         session.beginConfiguration()
         photoOutput.isAppleProRAWEnabled = wanted
         session.commitConfiguration()
         PerfLog.line("single: ProRAW \(wanted ? "on" : "off") in \(Int(PerfLog.ms(since: start)))ms")
+    }
+
+    /// Apple Log only in video mode with a 银幕 look, where the camera has a Log format. The device leaves the photo
+    /// preset for that format, and the photo output can't shoot while Log is selected, so photo mode and every other
+    /// look stay on the preset exactly as before. Never switched mid-take: the movie's size is fixed.
+    private func applyLogVideo() {
+        guard isConfigured, let device, recorder.with({ $0 }) == nil else { return }
+        let format = videoMode && screenSelected.with({ $0 }) ? Self.logFormat(for: device) : nil
+        guard (format != nil) != logActive else { return }
+        let start = PerfLog.now()
+        let zoom = device.videoZoomFactor
+        defer {
+            // A format change can put a virtual camera back on its widest lens.
+            if device.videoZoomFactor != zoom, (try? device.lockForConfiguration()) != nil {
+                device.videoZoomFactor = ZoomLadderBuilder.clamped(zoom, on: device)
+                device.unlockForConfiguration()
+            }
+        }
+        session.beginConfiguration()
+        if let format, (try? device.lockForConfiguration()) != nil {
+            photoOutput.isAppleProRAWEnabled = false
+            session.automaticallyConfiguresCaptureDeviceForWideColor = false
+            device.activeFormat = format
+            device.activeColorSpace = .appleLog
+            device.unlockForConfiguration()
+            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Self.logPixelFormat]
+            logActive = true
+        } else {
+            leaveLog()
+        }
+        session.commitConfiguration()
+        applyFrameRate()
+        applyProRAW()
+        status.logVideo = logActive
+        publishStatus()
+        PerfLog.line("single: Apple Log \(logActive ? "on" : "off") in \(Int(PerfLog.ms(since: start)))ms, format \(CaptureFormatLog.describe(device.activeFormat, on: device))")
+    }
+
+    /// Back to the photo preset, which picks the photo format and Display P3 again. Call inside a configuration.
+    private func leaveLog() {
+        guard logActive else { return }
+        session.automaticallyConfiguresCaptureDeviceForWideColor = true
+        session.sessionPreset = .photo
+        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        logActive = false
+    }
+
+    private static let logPixelFormat = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+
+    /// A Log format that frames like the photo format, around the preview's 1920 wide, and runs at 24 and 30.
+    private static func logFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        let photo = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        let photoAspect = Double(photo.width) / Double(max(photo.height, 1))
+        let candidates = device.formats.filter { format in
+            format.supportedColorSpaces.contains(.appleLog)
+                && CMFormatDescriptionGetMediaSubType(format.formatDescription) == logPixelFormat
+                && format.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= 24 && $0.maxFrameRate >= 30 }
+        }
+        func rank(_ format: AVCaptureDevice.Format) -> (Int, Int, Int32) {
+            let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            let aspect = Double(size.width) / Double(max(size.height, 1))
+            return (abs(aspect - photoAspect) < 0.01 ? 0 : 1, size.width >= 1920 ? 0 : 1, abs(size.width - 1920))
+        }
+        return candidates.min { rank($0) < rank($1) }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -277,11 +360,16 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let renderParameters = parameters.with { $0 }
         if renderParameters.lookID != loggedLook.with({ $0 }) {
             loggedLook.with { $0 = renderParameters.lookID }
-            PerfLog.line("preview look \(renderParameters.lookID), buffer \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))")
+            let curve = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferLogTransferFunctionKey, nil).map { "\($0)" } ?? "none"
+            PerfLog.line("preview look \(renderParameters.lookID), buffer \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer)), log curve \(curve)")
         }
-        let source = FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
+        // Only Apple Log is asked for in 10 bits, so the buffer's own format says which frames are Log.
+        let log = CVPixelBufferGetPixelFormatType(pixelBuffer) == Self.logPixelFormat
+            ? FrameImageMaker.logSources(from: pixelBuffer, parameters: renderParameters)
+            : nil
+        let source = log?.display ?? FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
         thumbnailTap.offer(source)
-        let graded = FrameImageMaker.graded(source, parameters: renderParameters)
+        let graded = FrameImageMaker.graded(source, scene: log?.scene, parameters: renderParameters)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         previewView.draw(image: framed, token: previewToken.with { $0 })
         if let active = recorder.with({ $0 }) {
@@ -509,6 +597,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             applyProRAW()
         }
         if !session.isRunning {
+            applyLogVideo()
             // Dual may have held the same camera at its own rate.
             applyFrameRate()
             previewToken.with { $0 = previewView.claimDrawer() }
@@ -520,6 +609,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     private func reconfigure(facing: CameraFacing) {
         session.beginConfiguration()
+        leaveLog()
+        status.logVideo = false
         for input in session.inputs where input !== audioInput {
             session.removeInput(input)
         }
@@ -537,6 +628,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         parameters.with { $0.orientation = Self.orientation(for: facing) }
         session.commitConfiguration()
         applyCaptureExtras()
+        applyLogVideo()
         applyProRAW()
         PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
     }

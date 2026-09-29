@@ -81,7 +81,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `EffectKernels` | 从 `default.metallib` 读 `EffectKernels.metal` 里的 kernel |
 | `AutoLevels` | Lampa 的直方图黑白点和五点曲线 |
 | `FilmFinish` | 颜色之后的褪色、光晕、颗粒、暗角，只用系统滤镜 |
-| `ScreenPrint` | 银幕款：还原场景光（或接 ProRAW 的场景光），柔光、光晕，压回显示值，印片 LUT，逐帧颗粒 |
+| `ScreenPrint` | 银幕款：还原场景光（或接 ProRAW、Apple Log 的场景光），柔光、光晕，压回显示值，印片 LUT，逐帧颗粒 |
 | `ProRAWDevelopment` | 银幕款的 ProRAW 显影两次：线性场景光，和 Apple 默认显影 |
 | `LUTStore` | 把 512×512 LUT 图展开成 64³，最近 16 张；缩略图另有 22³ 小立方，最近 96 张 |
 | `GrainLibrary` | 细、粗两张颗粒板 |

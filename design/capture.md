@@ -39,7 +39,7 @@ flowchart TB
 
 ProRAW 由 `ProRAWDevelopment` 用 `CIRAWFilter` 显影两次：
 
-- 场景光：`baselineExposure = 0`、`exposure = −2`、`boostAmount = 0`（不加全局曲线）、`localToneMapAmount = 0`（关局部色调映射）、`extendedDynamicRangeAmount = 2`。不开扩展范围时滤镜在曝光之前就截在 1，会丢掉约一档半高光；先压 2 档是为了让所有值在进 Display P3 工作空间时都小于 1。之后交给 `ScreenPrint.sceneLight` 乘回来，见 [rendering.md](rendering.md) 的「银幕的 RAW 成片」。
+- 场景光：`baselineExposure = 0`、`boostAmount = 0`（不加全局曲线）、`localToneMapAmount = 0`（关局部色调映射）、`extendedDynamicRangeAmount = 2`。不开扩展范围时滤镜截在 1，会丢掉约一档半高光；开了以后大于 1 的值在 Display P3 工作空间里也能保留下来。`exposure` 必须留在 0：滤镜是在 context 的工作空间里乘曝光的，P3 是伽马编码，设 −2 实际压暗约四档。第一版就是这样错的，成片暗且发灰，和取景差很多。基准曝光由 `ScreenPrint.sceneLight` 乘回，见 [rendering.md](rendering.md) 的「银幕的 RAW 成片」。
 - Apple 默认显影：强度滑杆往回混用它；拍完到出片之间换成了别的分类时也用它，当作普通照片处理。
 
 画面方向按 DNG 里的方向自动转正，前置的镜像仍由 `FrameImageMaker` 加。画幅切换不重建会话，裁切发生在渲染。翻转摄像头会拆掉当前输入再挂上另一侧的设备，并回到该设备的 1x 档。
@@ -170,6 +170,11 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 - 时间戳用采样缓冲自己的，写入从第一帧开始，之前的声音丢掉。双摄的合成图每来一路新帧就重画一次，录像按后置那一路的时间戳，每个后置帧最多记一帧。
 - 声音：录像模式下加麦克风输入和 `AVCaptureAudioDataOutput`，编码参数用 `recommendedAudioSettingsForAssetWriter`，AAC。第一次切到录像时请求麦克风，没授权就录无声的。单摄在录像模式里关掉实况。双摄用 `addInputWithNoConnections` 加麦克风，手动连到音频输出；`removeAll` 之后按模式重新加。两个会话各自记着模式，录像模式里切单双摄麦克风跟着走。
 - 帧率：录像模式下工具行第二格（照片模式是实况）换成「30P / 24P」，选 24P 时是黄色，记在 `UserDefaults` 的 `capture.frameRate`，录制中锁住。24P 把 `activeVideoMinFrameDuration` 和 `activeVideoMaxFrameDuration` 都锁在 1/24，暗光也不降帧，取景跟着变成 24 帧；格式不支持 24 时退回 30P 的设置。30P 单摄用格式自己的范围，双摄是 30、暗光可降到 15。切回照片模式就放开。`VideoRecorder` 的 `AVVideoExpectedSourceFrameRateKey` 跟着设备当时锁定的帧率。快门角度没有做：自动曝光在亮处会用很短的快门，要稳定的 180°（1/48 秒）得用自定义曝光并配 ND，手机上做不到，所以 24P 在亮处的动态模糊仍比电影少。
+- 银幕款录 Apple Log：录像模式下选中「银幕」分类里的款，并且设备有 Apple Log 格式（iPhone 15 Pro 及以后）时，`CameraSessionController.applyLogVideo` 把设备切到 Log 格式，帧率按钮下面出现一个黄色的小「LOG」。离开银幕、回到照片模式、翻转摄像头、切双摄时退回 `.photo` 预设。别的分类和照片模式的格式和以前完全一样。
+  - 格式：`supportedColorSpaces` 含 `.appleLog`、像素格式是 10 位 `x420`、帧率范围盖住 24 到 30 的里面，先挑和照片格式同比例（4:3，取景视角不变），再挑宽 1920 左右的，和预览尺寸一致。设备没有这样的格式就照旧录普通画面。
+  - 切换在一次配置里完成：关 ProRAW（选了 Log 色彩空间时照片输出不能拍照），关 `automaticallyConfiguresCaptureDeviceForWideColor`，设 `activeFormat` 和 `activeColorSpace = .appleLog`，视频输出改成 10 位 `x420`。退回时打开自动广色域、设回 `.photo` 预设、输出改回 `32BGRA`，再按需要打开 ProRAW。换格式前后保持变焦倍数，免得虚拟相机跳回超广角。录制中不切，停下后再补。
+  - 帧读法：只有 Log 才要 10 位，所以帧的像素格式就说明它是不是 Log。`FrameImageMaker.logSources` 用 `colorSpace: NSNull()` 读出编码值（YCbCr 转 RGB 仍按帧上的矩阵），转正裁切后交给 `ScreenPrint.sceneLight(fromAppleLog:)` 解码成场景光；缩略图、强度混合和别的分类用它压回的显示图。见 [rendering.md](rendering.md) 的「银幕的 Apple Log 录像」。
+  - 调试台里切换时打印 `single: Apple Log on/off` 和格式，换滤镜时的 `preview look` 一行带上帧的 `log curve`。
 - 录制中取景顶部居中显示红底计时。快门变红，录制中缩成红色圆角方块。离开前台时自动停。
 - 停下后进确认页：循环播放（带声音），重拍删掉临时文件，保存用 `PHAssetCreationRequest` 的 `.video` 资源。写失败时横幅「录像没有保存下来」。
 - 先录 SDR。HDR 以后单独做。

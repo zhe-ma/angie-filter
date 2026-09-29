@@ -247,6 +247,16 @@ struct CameraView: View {
                 }
                 .buttonStyle(.plain)
                 .lockedWhileRecording(model.isRecording)
+                .overlay(alignment: .bottom) {
+                    if model.status.logVideo && !model.dualOn {
+                        Text("LOG")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(CameraPalette.accent)
+                            .upright(model.iconAngle)
+                            .offset(y: -3)
+                            .allowsHitTesting(false)
+                    }
+                }
             } else {
                 trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",
                            on: model.liveWanted && model.liveAvailable, action: model.toggleLive)
