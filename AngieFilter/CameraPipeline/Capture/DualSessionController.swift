@@ -49,6 +49,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private var wantsRunning = false
     private var activeStart: (id: Int, completion: (DualStartOutcome) -> Void)?
     private var videoMode = false
+    private var frameRate = VideoFrameRate.thirty
     private var audioInput: AVCaptureDeviceInput?
     private let audioOutput = AVCaptureAudioDataOutput()
     private let audioQueue = DispatchQueue(label: "angie.camera.dual.audio")
@@ -189,6 +190,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.videoMode = on
+            self.applyFrameRate()
             guard on, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
                 self.applyAudio()
                 return
@@ -208,8 +210,38 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
                 : nil
             self.recordingHold.with { $0 = hold }
             self.recordedTime.with { $0 = .negativeInfinity }
-            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound) }
+            let fps = self.backDevice.map { Int((1 / max($0.activeVideoMinFrameDuration.seconds, 0.001)).rounded()) } ?? 30
+            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound, frameRate: fps) }
         }
+    }
+
+    func setVideoFrameRate(_ rate: VideoFrameRate) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.frameRate = rate
+            self.applyFrameRate()
+        }
+    }
+
+    private func applyFrameRate() {
+        for device in [backDevice, frontDevice].compactMap({ $0 }) {
+            guard (try? device.lockForConfiguration()) != nil else { continue }
+            setFrameDurations(on: device)
+            device.unlockForConfiguration()
+        }
+    }
+
+    /// Needs the device locked. 24fps is pinned in video mode; otherwise up to 30, free to slow to 15 in low light.
+    private func setFrameDurations(on device: AVCaptureDevice) {
+        let ranges = device.activeFormat.videoSupportedFrameRateRanges
+        if videoMode, frameRate == .twentyFour, ranges.contains(where: { $0.minFrameRate <= 24 && $0.maxFrameRate >= 24 }) {
+            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 24)
+            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 24)
+            return
+        }
+        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
+        let slowest = ranges.map(\.minFrameRate).min() ?? 30
+        device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: CMTimeScale(max(15, slowest.rounded(.up))))
     }
 
     func stopRecording(_ completion: @escaping (URL?) -> Void) {
@@ -626,9 +658,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             // Match the single-camera photo preset: 8-bit Display P3, up to 30fps, free to slow to 15 in low light,
             // and no video HDR. Left automatic, a 10-bit format switches to HLG and the frames look overexposed.
             device.activeColorSpace = format.supportedColorSpaces.contains(.P3_D65) ? .P3_D65 : .sRGB
-            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
-            let slowest = format.videoSupportedFrameRateRanges.map(\.minFrameRate).min() ?? 30
-            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: CMTimeScale(max(15, slowest.rounded(.up))))
+            setFrameDurations(on: device)
             if format.isVideoHDRSupported {
                 device.automaticallyAdjustsVideoHDREnabled = false
                 device.isVideoHDREnabled = false

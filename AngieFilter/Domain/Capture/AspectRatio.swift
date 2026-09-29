@@ -10,6 +10,9 @@ enum AspectRatio: String, CaseIterable, Identifiable, Sendable {
     case threeTwo = "3:2"
     case sixteenNine = "16:9"
     case twoOne = "2:1"
+    /// Flat and scope, the two widescreen projection ratios.
+    case flat = "1.85:1"
+    case scope = "2.39:1"
 
     var id: String { rawValue }
 
@@ -23,6 +26,8 @@ enum AspectRatio: String, CaseIterable, Identifiable, Sendable {
         case .threeTwo: return 3.0 / 2.0
         case .sixteenNine: return 16.0 / 9.0
         case .twoOne: return 2
+        case .flat: return 1.85
+        case .scope: return 2.39
         }
     }
 }

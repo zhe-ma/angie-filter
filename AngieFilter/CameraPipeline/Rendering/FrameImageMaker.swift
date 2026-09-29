@@ -14,10 +14,11 @@ enum FrameImageMaker {
         prepared(geometry(photoImage, parameters: parameters), quality: parameters.quality)
     }
 
-    static func graded(_ source: CIImage, parameters: RenderParameters) -> CIImage {
+    static func graded(_ source: CIImage, scene: CIImage? = nil, parameters: RenderParameters) -> CIImage {
         let look = LookLibrary.look(id: parameters.lookID)
         return GradeApplicator.apply(
             source,
+            scene: scene,
             look: look,
             adjustment: parameters.adjustment,
             quality: parameters.quality

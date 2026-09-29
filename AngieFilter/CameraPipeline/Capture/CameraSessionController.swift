@@ -38,9 +38,12 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let audioQueue = DispatchQueue(label: "angie.camera.audio")
     private let recorder = Locked<VideoRecorder?>(nil)
     private let recordingHold = Locked(HoldOrientation.portrait)
+    /// A 银幕 look is selected, so stills are shot as ProRAW where the camera has it.
+    private let wantsSceneStills = Locked(false)
     /// Touched only on `sessionQueue`.
     private var liveWanted = false
     private var videoMode = false
+    private var frameRate = VideoFrameRate.thirty
     private var audioInput: AVCaptureDeviceInput?
 
     override init() {
@@ -52,9 +55,20 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     func updateRenderParameters(_ body: (inout RenderParameters) -> Void) {
-        parameters.with { value in
+        let lookID = parameters.with { value -> Look.ID in
             body(&value)
             value.frameModelName = modelName
+            return value.lookID
+        }
+        let screen = LookLibrary.look(id: lookID).isScreen
+        let changed = wantsSceneStills.with { wanted -> Bool in
+            defer { wanted = screen }
+            return wanted != screen
+        }
+        if changed {
+            sessionQueue.async { [weak self] in
+                self?.applyProRAW()
+            }
         }
     }
 
@@ -142,6 +156,14 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
+    func setVideoFrameRate(_ rate: VideoFrameRate) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.frameRate = rate
+            self.applyFrameRate()
+        }
+    }
+
     func startRecording(to url: URL) {
         let hold = parameters.with { $0.hold }
         sessionQueue.async { [weak self] in
@@ -150,8 +172,29 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 ? self.audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mov)
                 : nil
             self.recordingHold.with { $0 = hold }
-            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound) }
+            let fps = self.device.flatMap(Self.lockedFrameRate) ?? 30
+            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound, frameRate: fps) }
         }
+    }
+
+    /// 24fps in video mode when the format allows it; otherwise the format's own range.
+    private func applyFrameRate() {
+        guard isConfigured, let device else { return }
+        let wants24 = videoMode && frameRate == .twentyFour && device.activeFormat.videoSupportedFrameRateRanges.contains {
+            $0.minFrameRate <= 24 && $0.maxFrameRate >= 24
+        }
+        guard (try? device.lockForConfiguration()) != nil else { return }
+        let duration = wants24 ? CMTime(value: 1, timescale: 24) : .invalid
+        device.activeVideoMinFrameDuration = duration
+        device.activeVideoMaxFrameDuration = duration
+        device.unlockForConfiguration()
+    }
+
+    /// The rate the device is pinned to, or nil when it is free to vary.
+    private static func lockedFrameRate(_ device: AVCaptureDevice) -> Int? {
+        let fastest = device.activeVideoMinFrameDuration
+        guard fastest.isValid, fastest == device.activeVideoMaxFrameDuration, fastest.seconds > 0 else { return nil }
+        return Int((1 / fastest.seconds).rounded())
     }
 
     func stopRecording(_ completion: @escaping (URL?) -> Void) {
@@ -187,7 +230,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         shutterHold.with { $0 = hold }
         sessionQueue.async { [weak self] in
             guard let self, self.isConfigured else { return }
-            let settings = AVCapturePhotoSettings()
+            let settings = self.rawPixelFormat().map { AVCapturePhotoSettings(rawPixelFormatType: $0) } ?? AVCapturePhotoSettings()
             let flash = self.avFlashMode(self.status.flashMode)
             if self.photoOutput.supportedFlashModes.contains(flash) {
                 settings.flashMode = flash
@@ -203,6 +246,25 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             }
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
+    }
+
+    /// ProRAW only for a 银幕 look, and not for Live Photos, which ProRAW can't carry.
+    private func rawPixelFormat() -> OSType? {
+        guard wantsSceneStills.with({ $0 }), photoOutput.isAppleProRAWEnabled, !photoOutput.isLivePhotoCaptureEnabled else { return nil }
+        return photoOutput.availableRawPhotoPixelFormatTypes.first { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }
+    }
+
+    /// ProRAW is on only while a 银幕 look is selected: turning it on rebuilds the capture pipeline,
+    /// and every other look keeps the photo output exactly as before.
+    private func applyProRAW() {
+        guard isConfigured else { return }
+        let wanted = wantsSceneStills.with { $0 } && photoOutput.isAppleProRAWSupported
+        guard photoOutput.isAppleProRAWEnabled != wanted else { return }
+        let start = PerfLog.now()
+        session.beginConfiguration()
+        photoOutput.isAppleProRAWEnabled = wanted
+        session.commitConfiguration()
+        PerfLog.line("single: ProRAW \(wanted ? "on" : "off") in \(Int(PerfLog.ms(since: start)))ms")
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -243,9 +305,25 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             publishFailure(error.localizedDescription)
             return
         }
-        guard let data = photo.fileDataRepresentation(), let photoImage = PhotoOrientation.uprightImage(from: data) else {
+        guard let data = photo.fileDataRepresentation() else {
             publishFailure("没有拿到照片")
             return
+        }
+        let photoImage: CIImage
+        var scene: CIImage?
+        if photo.isRawPhoto {
+            guard let developed = ProRAWDevelopment(data: data) else {
+                publishFailure("RAW 显影失败")
+                return
+            }
+            photoImage = developed.display
+            scene = developed.scene
+        } else {
+            guard let image = PhotoOrientation.uprightImage(from: data) else {
+                publishFailure("没有拿到照片")
+                return
+            }
+            photoImage = image
         }
         var renderParameters = parameters.with { $0 }
         renderParameters.quality = .still
@@ -254,10 +332,14 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         renderParameters.frameDate = shutterDate.with { $0 }
         renderParameters.framePlace = shutterPlace.with { $0 }
         renderParameters.hold = shutterHold.with { $0 }
-        let framed = stillPipeline(photoImage, parameters: renderParameters)
+        let start = PerfLog.now()
+        let framed = stillPipeline(photoImage, scene: scene, parameters: renderParameters)
         guard let image = previewView.makeImage(framed) else {
             publishFailure("照片处理失败")
             return
+        }
+        if scene != nil {
+            PerfLog.line("proraw still graded in \(Int(PerfLog.ms(since: start)))ms")
         }
         let id = photo.resolvedSettings.uniqueID
         let live = photo.resolvedSettings.livePhotoMovieDimensions.width > 0
@@ -362,9 +444,11 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     /// The still's steps from an upright, unmirrored image: mirror and crop, grade, turn for the hold, frame.
-    private func stillPipeline(_ image: CIImage, parameters: RenderParameters) -> CIImage {
+    /// `scene` is the same shot in scene light, cut the same way.
+    private func stillPipeline(_ image: CIImage, scene: CIImage? = nil, parameters: RenderParameters) -> CIImage {
         let source = FrameImageMaker.sourceImage(from: image, parameters: parameters)
-        let graded = FrameImageMaker.graded(source, parameters: parameters)
+        let sceneSource = scene.map { FrameImageMaker.sourceImage(from: $0, parameters: parameters) }
+        let graded = FrameImageMaker.graded(source, scene: sceneSource, parameters: parameters)
         let turned = FrameImageMaker.turned(graded, hold: parameters.hold)
         return framedImage(turned, parameters: parameters, synchronousCaption: true)
     }
@@ -422,8 +506,11 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         if !isConfigured {
             configure(facing: .back)
             applyCaptureExtras()
+            applyProRAW()
         }
         if !session.isRunning {
+            // Dual may have held the same camera at its own rate.
+            applyFrameRate()
             previewToken.with { $0 = previewView.claimDrawer() }
             session.startRunning()
         }
@@ -450,6 +537,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         parameters.with { $0.orientation = Self.orientation(for: facing) }
         session.commitConfiguration()
         applyCaptureExtras()
+        applyProRAW()
         PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
     }
 
@@ -490,6 +578,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let supported = photoOutput.isLivePhotoCaptureSupported
         photoOutput.isLivePhotoCaptureEnabled = liveWanted && !videoMode && supported
         session.commitConfiguration()
+        applyFrameRate()
         status.liveSupported = supported
         status.liveOn = photoOutput.isLivePhotoCaptureEnabled
         publishStatus()

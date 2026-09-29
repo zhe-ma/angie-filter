@@ -9,6 +9,8 @@ enum LookGrade: Equatable, Sendable {
     case builtIn(BuiltInGrade)
     /// A chain of stages taken from another app's technique, with an optional LUT inside it.
     case effect(EffectGrade)
+    /// The 银幕 print LUT, with mist and halation worked in scene light around it.
+    case screen(LUTGrade)
 }
 
 struct LUTGrade: Equatable, Sendable {

@@ -24,11 +24,12 @@ enum LookLibrary {
         grade: .none
     )
 
-    /// `Looks.json` is rewritten by Tools/ImportFilmLUTs.swift. `LabLooks.json` is edited by hand.
+    /// `Looks.json` is rewritten by Tools/ImportFilmLUTs.swift. `LabLooks.json` and `ScreenLooks.json`
+    /// are edited by hand; the 银幕 LUTs come from Tools/BakeScreenLUTs.py.
     private static func load() -> [Look] {
         let looks = records(named: "Looks").compactMap(\.look)
         guard !looks.isEmpty else { return [original] }
-        return looks + records(named: "LabLooks").compactMap(\.look)
+        return looks + records(named: "LabLooks").compactMap(\.look) + records(named: "ScreenLooks").compactMap(\.look)
     }
 
     private static func records(named name: String) -> [LookRecord] {
@@ -42,6 +43,7 @@ enum LookLibrary {
 
     private static let familySpecs: [(id: String, name: String, ids: [String])] = [
         ("original", "原图", [Look.originalID]),
+        ("screen", "银幕", ["screen-250d", "screen-50d", "screen-200t", "screen-golden", "screen-500t", "screen-500t-blue", "screen-premier"]),
         ("lab", "实验室", ["lab-fisheye-w", "lab-fisheye-f", "lab-leak", "lab-darkcorner", "lab-xt30", "lab-5s", "lab-gccd", "lab-4s", "lab-lomo", "lab-nn", "lab-fino35", "lab-valencia", "lab-nova", "lab-scarlet", "lab-noir", "lab-levels", "lab-crush", "lab-faded", "lab-expired", "lab-analog", "lab-hardbw", "lab-bloom"]),
         ("kodak", "柯达", ["portra160", "portra400", "portra400vc", "portra800", "ektar100", "elite200", "elite400", "kodachrome64", "ektachrome100vs", "elitechrome200", "trix400", "tmax100", "bw400cn"]),
         ("fuji", "富士", ["pro400h", "pro160c", "pro800z", "superia200", "superia400", "superia800", "reala100", "velvia50", "provia100f", "astia100f", "acros100", "neopan1600"]),
@@ -95,6 +97,7 @@ private struct LookRecord: Decodable {
     let grain: Float?
     let grainPlate: GrainPlateKind?
     let vignette: Float?
+    let diffusion: Float?
 
     /// Nil for an unknown grade, so a bad entry is skipped instead of showing as the original.
     var look: Look? {
@@ -105,6 +108,8 @@ private struct LookRecord: Decodable {
         switch grade {
         case "lut":
             resolved = .lut(LUTGrade(imageName: lut ?? id, strength: min(max(strength ?? 1, 0), 1)))
+        case "screen":
+            resolved = .screen(LUTGrade(imageName: lut ?? id, strength: min(max(strength ?? 1, 0), 1)))
         case "builtIn":
             guard let filter else { return nil }
             resolved = .builtIn(BuiltInGrade(filterName: filter))
@@ -125,7 +130,8 @@ private struct LookRecord: Decodable {
                 halation: halation ?? 0,
                 grain: grain ?? 0,
                 grainPlate: plate,
-                vignette: vignette ?? 0
+                vignette: vignette ?? 0,
+                diffusion: diffusion ?? 0
             )
         )
     }

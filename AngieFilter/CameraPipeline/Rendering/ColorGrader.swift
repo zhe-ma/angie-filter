@@ -11,7 +11,7 @@ enum ColorGrader {
         switch grade {
         case .none:
             return image
-        case .lut(let lut):
+        case .lut(let lut), .screen(let lut):
             return self.lut(image, name: lut.imageName, quality: quality)
         case .builtIn(let builtIn):
             guard let filter = CIFilter(name: builtIn.filterName) else { return image }

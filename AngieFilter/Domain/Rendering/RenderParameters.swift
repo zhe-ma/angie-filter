@@ -7,6 +7,7 @@ struct LookAdjustment: Equatable, Sendable {
     var halation: Float = 0
     var grain: Float = 0
     var vignette: Float = 0
+    var diffusion: Float = 0
 
     static func baseline(for look: Look) -> LookAdjustment {
         guard !look.isOriginal else { return LookAdjustment() }
@@ -15,7 +16,8 @@ struct LookAdjustment: Equatable, Sendable {
             fade: look.finish.fade,
             halation: look.finish.halation,
             grain: look.finish.grain,
-            vignette: look.finish.vignette
+            vignette: look.finish.vignette,
+            diffusion: look.finish.diffusion
         )
     }
 }

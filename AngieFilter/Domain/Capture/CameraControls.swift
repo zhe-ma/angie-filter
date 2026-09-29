@@ -84,6 +84,16 @@ enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
+/// Video mode only. 24 locks both frame durations, so it never slows down in low light; 30 keeps each session's own range.
+enum VideoFrameRate: Int, Sendable {
+    case thirty = 30
+    case twentyFour = 24
+
+    var label: String { "\(rawValue)P" }
+
+    var next: VideoFrameRate { self == .thirty ? .twentyFour : .thirty }
+}
+
 struct CameraStatus: Equatable, Sendable {
     var authorization: CameraAuthorization = .unknown
     var isRunning = false

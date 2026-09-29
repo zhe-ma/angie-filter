@@ -22,7 +22,7 @@ struct Look: Identifiable, Equatable, Sendable {
     /// First mix toward the original when this look is picked.
     var strength: Float {
         switch grade {
-        case .lut(let grade): return grade.strength
+        case .lut(let grade), .screen(let grade): return grade.strength
         case .effect(let grade): return grade.strength
         case .none, .builtIn: return 1
         }
@@ -30,4 +30,12 @@ struct Look: Identifiable, Equatable, Sendable {
 
     /// Halation stays hidden unless this look ships with it.
     var showsHalation: Bool { finish.halation > 0.001 }
+
+    /// 银幕: printed from scene light, and shot as ProRAW where the camera has it.
+    var isScreen: Bool {
+        if case .screen = grade { return true }
+        return false
+    }
+
+    var showsDiffusion: Bool { isScreen }
 }

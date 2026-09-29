@@ -33,7 +33,16 @@ flowchart TB
 - `AVCaptureVideoDataOutput`：像素格式 `32BGRA`，`alwaysDiscardsLateVideoFrames = true`，委托在 `videoQueue`
 - `AVCapturePhotoOutput`：`maxPhotoQualityPrioritization = .quality`
 
-这一阶段不开启 Live Photo、人像和 RAW，Live Photo 和录像的路线在最后一节。画幅切换不重建会话，裁切发生在渲染。翻转摄像头会拆掉当前输入再挂上另一侧的设备，并回到该设备的 1x 档。
+不开启人像。Live Photo 和录像的路线在最后一节。
+
+**银幕款拍 ProRAW。** 选中「银幕」分类里的款时，`CameraSessionController.applyProRAW` 打开 `photoOutput.isAppleProRAWEnabled`，离开这个分类就关掉。打开要重建采集管线，头文件说很慢，所以只在进出银幕时切一次，别的分类照片输出和以前完全一样。快门时如果 ProRAW 已开、没有开实况，就用 `AVCapturePhotoSettings(rawPixelFormatType:)` 只拍一张 ProRAW（ProRAW 不能带实况视频，所以实况开着时银幕仍拍普通照片）。设备不支持 ProRAW 时自动回到普通照片。双摄不拍 RAW。
+
+ProRAW 由 `ProRAWDevelopment` 用 `CIRAWFilter` 显影两次：
+
+- 场景光：`baselineExposure = 0`、`exposure = −2`、`boostAmount = 0`（不加全局曲线）、`localToneMapAmount = 0`（关局部色调映射）、`extendedDynamicRangeAmount = 2`。不开扩展范围时滤镜在曝光之前就截在 1，会丢掉约一档半高光；先压 2 档是为了让所有值在进 Display P3 工作空间时都小于 1。之后交给 `ScreenPrint.sceneLight` 乘回来，见 [rendering.md](rendering.md) 的「银幕的 RAW 成片」。
+- Apple 默认显影：强度滑杆往回混用它；拍完到出片之间换成了别的分类时也用它，当作普通照片处理。
+
+画面方向按 DNG 里的方向自动转正，前置的镜像仍由 `FrameImageMaker` 加。画幅切换不重建会话，裁切发生在渲染。翻转摄像头会拆掉当前输入再挂上另一侧的设备，并回到该设备的 1x 档。
 
 性能预算（iPhone 13）：预览 30fps，忙时丢旧帧，拍照不堵住预览队列，`CIContext` 复用。预览的 context 建在 `PreviewMetalView` 上，成片也用它的 `makeImage`。会话目前只丢迟到帧，还没有把 `activeVideoMinFrameDuration` 锁到 30fps。
 
@@ -69,6 +78,10 @@ iPhone 16 Pro 后置得到 13、24、28、35、50、85、120。档位标签只�
 | 3:2 | 3/2 | 横向 |
 | 16:9 | 16/9 | 横向宽条 |
 | 2:1 | 2 | 横向宽条 |
+| 1.85:1 | 1.85 | 宽银幕遮幅（flat） |
+| 2.39:1 | 2.39 | 宽银幕变形（scope） |
+
+1.85:1 和 2.39:1 是影院放映的两种宽银幕比例，排在菜单最后，和「银幕」滤镜、「字幕」相框配着用。2.39:1 的照片套字幕相框正好是 16:9。
 
 标签是转正后照片的宽:高。工具托盘的画幅按钮点开是一张菜单，直接选。`CameraView` 的取景区大小固定，照片按同一个 `widthOverHeight` 等比放进去并居中，画幅外是黑底。
 
@@ -141,7 +154,7 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 6. 做好后确认页换成 `PHLivePhotoView`，先轻播一下，之后长按播放。`PHLivePhoto.request(withResourceFileURLs:)` 能加载，说明这对文件能配上。
 7. 保存时 `PHAssetCreationRequest` 同时加 `.photo` 和 `.pairedVideo`。视频失败时横幅「实况没有生成，会保存为照片」，照常存静图。重拍、再拍或保存成功都删掉临时文件。
 
-颗粒是一张固定的平铺图，和取景一样不随帧跳动。
+颗粒是一张固定的平铺图，和取景一样不随帧跳动。银幕款例外，颗粒每 1/24 秒换一个位置。
 
 ## 双摄
 
@@ -156,6 +169,7 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 - 拿法在开录那一刻定下，整段不变。竖拿直接录取景那张图；横拿、倒拿先按成片同一条规则转正，再套相框，相框和字是横的。前置照旧是镜像。
 - 时间戳用采样缓冲自己的，写入从第一帧开始，之前的声音丢掉。双摄的合成图每来一路新帧就重画一次，录像按后置那一路的时间戳，每个后置帧最多记一帧。
 - 声音：录像模式下加麦克风输入和 `AVCaptureAudioDataOutput`，编码参数用 `recommendedAudioSettingsForAssetWriter`，AAC。第一次切到录像时请求麦克风，没授权就录无声的。单摄在录像模式里关掉实况。双摄用 `addInputWithNoConnections` 加麦克风，手动连到音频输出；`removeAll` 之后按模式重新加。两个会话各自记着模式，录像模式里切单双摄麦克风跟着走。
+- 帧率：录像模式下工具行第二格（照片模式是实况）换成「30P / 24P」，选 24P 时是黄色，记在 `UserDefaults` 的 `capture.frameRate`，录制中锁住。24P 把 `activeVideoMinFrameDuration` 和 `activeVideoMaxFrameDuration` 都锁在 1/24，暗光也不降帧，取景跟着变成 24 帧；格式不支持 24 时退回 30P 的设置。30P 单摄用格式自己的范围，双摄是 30、暗光可降到 15。切回照片模式就放开。`VideoRecorder` 的 `AVVideoExpectedSourceFrameRateKey` 跟着设备当时锁定的帧率。快门角度没有做：自动曝光在亮处会用很短的快门，要稳定的 180°（1/48 秒）得用自定义曝光并配 ND，手机上做不到，所以 24P 在亮处的动态模糊仍比电影少。
 - 录制中取景顶部居中显示红底计时。快门变红，录制中缩成红色圆角方块。离开前台时自动停。
 - 停下后进确认页：循环播放（带声音），重拍删掉临时文件，保存用 `PHAssetCreationRequest` 的 `.video` 资源。写失败时横幅「录像没有保存下来」。
 - 先录 SDR。HDR 以后单独做。

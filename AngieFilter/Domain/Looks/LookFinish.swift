@@ -7,4 +7,6 @@ struct LookFinish: Equatable, Sendable {
     var grain: Float = 0
     var grainPlate: GrainPlateKind = .none
     var vignette: Float = 0
+    /// Mist filter. Only 银幕 looks use it.
+    var diffusion: Float = 0
 }

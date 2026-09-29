@@ -8,6 +8,7 @@ import Metal
 final class VideoRecorder: @unchecked Sendable {
     private let url: URL
     private let audioSettings: [String: Any]?
+    private let frameRate: Int
     private let lock = NSLock()
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
@@ -29,9 +30,10 @@ final class VideoRecorder: @unchecked Sendable {
     }()
     private static let colorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
-    init(url: URL, audioSettings: [String: Any]?) {
+    init(url: URL, audioSettings: [String: Any]?, frameRate: Int) {
         self.url = url
         self.audioSettings = audioSettings
+        self.frameRate = frameRate
     }
 
     /// Called on the video queue. The image's size on the first call fixes the movie's size.
@@ -118,7 +120,7 @@ final class VideoRecorder: @unchecked Sendable {
             ],
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: max(8_000_000, width * height * 6),
-                AVVideoExpectedSourceFrameRateKey: 30
+                AVVideoExpectedSourceFrameRateKey: frameRate
             ]
         ])
         video.expectsMediaDataInRealTime = true
@@ -148,7 +150,7 @@ final class VideoRecorder: @unchecked Sendable {
         self.pixels = pixels
         bounds = CGRect(x: 0, y: 0, width: width, height: height)
         startTime = start
-        PerfLog.line("recording \(width)x\(height), sound \(audioInput != nil ? "yes" : "no")")
+        PerfLog.line("recording \(width)x\(height) at \(frameRate)fps, sound \(audioInput != nil ? "yes" : "no")")
         return true
     }
 }

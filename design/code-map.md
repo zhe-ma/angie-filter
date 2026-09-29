@@ -42,14 +42,14 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `HoldOrientation` | 手机怎么拿：竖、上端朝右、上端朝左、倒。成片按它转正，图标按它转向 |
 | `Look` | 一款滤镜。界面文案叫滤镜 |
 | `GrainPlateKind` | 无颗粒、细板、粗板 |
-| `LookFinish` | 目录里的褪色、光晕、颗粒、暗角 |
+| `LookFinish` | 目录里的褪色、光晕、颗粒、暗角、柔光 |
 | `LookGrade` | 这款走原图、LUT、Core Image 照片效果，还是实验室的处理链 |
 | `LUTGrade` | LUT 图文件名和默认强度 |
 | `BuiltInGrade` | Core Image 滤镜名 |
 | `EffectGrade`、`EffectRecipe` | 实验室一款的配方、可选 LUT 和默认强度 |
 | `LookFamily` | 一个分类，成员是 `Look` |
-| `LookLibrary` | 读 `Looks.json`，再接上 `LabLooks.json` |
-| `LookAdjustment` | 这一次打开里改过的强度、褪色、光晕、颗粒和暗角 |
+| `LookLibrary` | 读 `Looks.json`，再接上 `LabLooks.json` 和 `ScreenLooks.json` |
+| `LookAdjustment` | 这一次打开里改过的强度、褪色、柔光、光晕、颗粒和暗角 |
 | `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量、双摄排列 |
 | `DualLayout` | 上下、左右、画中画、圆窗、叠加 |
 | `PipCorner` | 小窗没被拖开时贴住的角 |
@@ -81,6 +81,8 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `EffectKernels` | 从 `default.metallib` 读 `EffectKernels.metal` 里的 kernel |
 | `AutoLevels` | Lampa 的直方图黑白点和五点曲线 |
 | `FilmFinish` | 颜色之后的褪色、光晕、颗粒、暗角，只用系统滤镜 |
+| `ScreenPrint` | 银幕款：还原场景光（或接 ProRAW 的场景光），柔光、光晕，压回显示值，印片 LUT，逐帧颗粒 |
+| `ProRAWDevelopment` | 银幕款的 ProRAW 显影两次：线性场景光，和 Apple 默认显影 |
 | `LUTStore` | 把 512×512 LUT 图展开成 64³，最近 16 张；缩略图另有 22³ 小立方，最近 96 张 |
 | `GrainLibrary` | 细、粗两张颗粒板 |
 | `FrameCompositor` | 调色之后把照片贴进更大的白画布 |

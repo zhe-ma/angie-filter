@@ -47,7 +47,7 @@ flowchart LR
 
 颗粒板是 `Grain/fine.png` 和 `Grain/coarse.png`，512×512 灰度，由导入脚本用固定种子生成，重跑结果不变。不用 `CIRandomGenerator`，它是逐像素噪声，预览和成片的颗粒大小会不一样。
 
-调节面板对所有非原图款都一样：强度、褪色、颗粒、暗角，目录里开了光晕的款多一根光晕。调节后的数值按滤镜 id 记在这次打开的内存里。
+调节面板对所有非原图款都一样：强度、褪色、颗粒、暗角，目录里开了光晕的款多一根光晕，银幕款再多一根柔光。调节后的数值按滤镜 id 记在这次打开的内存里。
 
 ## 颜色从哪来
 
@@ -58,6 +58,7 @@ flowchart LR
 | 富士官方 F-Log2 3D-LUT，下载页每个系列一台机型 | 18 | 没有再分发许可，只用于本地构建 | `Resources/FujiLUTs/fuji-<机型>-<模拟>.png` |
 | StormCam 1.5.4 标准影调和 Log 影调，从应用内加密资源解出 | 27 | 没有授权 | `Resources/StormCamLUTs/storm-<id>.png` |
 | Halide 3.1.1 创意 Look 的 SDR `.ccube` | 6 | 没有授权 | `Resources/HalideLUTs/halide-<id>.png` |
+| spektrafilm 0.3.4 光谱模拟：柯达 Vision3 负片印 2383 / 2393 放映拷贝 | 7 | 代码 GPLv3，数据 CC BY-SA 4.0 | `Resources/ScreenLUTs/screen-<id>.png` |
 
 富士下载页按系列分组，每个系列取一台带 F-Log2 的新机型，一个系列是一个分类：
 
@@ -107,11 +108,85 @@ swiftc -O Tools/ImportHalideLUTs.swift -o /tmp/import-halide
 /tmp/import-halide /tmp/halide/ipa/Payload/Halide.app/Frameworks/HalideCamera.framework
 ```
 
+### 银幕
+
+「银幕」分类是电影质感的新路线，和「电影感」分开，不改原有分类。电影感那 11 款是 RawTherapee 的通用调色表，只在显示空间里改颜色；银幕按真实的电影工艺链模拟：场景光曝光到柯达 Vision3 负片，负片在印片机里印到 2383（或 Vision Premier 2393）放映拷贝，再放映出来。模拟用 [spektrafilm](https://github.com/andreavolpato/spektrafilm)（原 agx-emulsion），它按染料光谱、特性曲线和 DIR 耦合剂算颜色，不是拟合出来的表。
+
+烘焙脚本是 `Tools/BakeScreenLUTs.py`，对 64³ 每个格点：
+
+1. sRGB 解码成线性。
+2. 还原到场景光：反向扩展 Reinhard，显示白到 12，18% 灰不动，和 Halide、StormCam Log 一样。区别是按「亮度和最小通道的平均」而不是最大通道来扩展。按最大通道时，显示值为 1 的纯红、纯黄会被当成比中灰高六档的高光，在负片上过曝发白。
+3. 加 veiling glare（`flare`，场景光的 0.5% 到 1.8%）。2383 的趾部很陡，不加时 −3 EV 只印出 0.035，手机照片的暗部全黑。加在负片这边，相当于镜头杂光抬暗部；加在印片上（preflash）只会整体变暗。
+4. spektrafilm 的 LUT 模式：颗粒、光晕、耦合剂的空间扩散、自动曝光都关掉，只留逐像素的颜色，空间效果在运行时做（见下面「银幕的光学效果」）。输入输出都是线性 sRGB 原色。
+5. 输出按通道除以显示白印出来的值，让白印成白。2383 本身最亮只到 0.88 左右、略偏暖，在手机上像发灰的高光。
+6. 印片曝光和黄、品滤色（Kodak CC 值）用牛顿法解：18% 灰印到 sRGB 0.46，并且三通道相等。每款自己的偏色加在解出的中性滤色上，再单独解一次曝光。相机 EV 在这里不起作用，spektrafilm 会在印片时把它补回去。
+
+| id | 名称 | 负片 → 拷贝 | 配光 | flare |
+| --- | --- | --- | --- | --- |
+| `screen-250d` | 2383 放映 | 250D → 2383 | 中性 | 1.2% |
+| `screen-50d` | 50D 日景 | 50D → 2383 | 中性 | 0.8% |
+| `screen-200t` | 200T 暖印 | 200T → 2383 | Y −5、M −1.5 | 1.2% |
+| `screen-golden` | 黄金时刻 | 250D → 2383 | Y −10、M −3 | 1.4% |
+| `screen-500t` | 500T 夜戏 | 500T → 2383 | Y +3、M +1 | 1.8% |
+| `screen-500t-blue` | 日光 500T | 500T → 2383 | 不做中性，只用数据库滤色再 Y +10，偏蓝 | 1.8% |
+| `screen-premier` | 2393 高级拷贝 | 250D → 2393 | 中性 | 0.5% |
+
+Y 加得多印出来偏蓝，M 加得多偏绿。四种 Vision3 负片中性化以后差别很小，真实的片子也是这样，所以这几款主要靠配光拉开。中灰两档以下明显比原图深（−2 EV 从 0.26 到 0.15 左右），高光平滑滚到白，深绿偏橄榄，暗部略青，这是 Vision3 + 2383 的特征。目录 `ScreenLooks.json` 手工编辑，`grade` 是 `screen`，分组在 `LookLibrary.familySpecs` 的 `screen`，排在原图后面。
+
+#### 银幕的光学效果
+
+其他分类的光晕在显示值上做：高光用色调曲线取出来，模糊后滤色叠加。显示值里白墙和灯泡都是 1，分不出谁更亮，所以白衣服、天空也会长红边。银幕这组改成在场景光里做，由 `ScreenPrint` 接管整条链，不经过 `EffectChain`：
+
+1. 还原到场景光（kernel `screenExpand`），和烘焙脚本第 2 步是同一条曲线：显示白到 12，18% 灰不动。
+2. 柔光（「柔光」滑杆，kernel `screenMist`）：模仿 Pro-Mist 一类柔光镜，把每个像素的一部分光挪到近、远两圈光晕里，`scene += 0.35 × 柔光 × (0.5·G(0.008S) + 0.5·G(0.04S) − scene)`，S 是短边。总光量不变，亮光源周围泛一层白雾，暗部被抬起一点，反差变软。
+3. 光晕（「光晕」滑杆，kernel `screenBright` + `screenHalation`）：只取场景光里超过 1.2 的部分（比中灰高约 2.7 档，漫反射白到不了），模糊成 `0.6·G(0.004S) + 0.4·G(0.012S)`，取亮度，乘 `0.4 × 光晕`，按 (1, 0.3, 0.06) 染成红橙色加回去。这对应光穿过乳剂、在片基背面反射回来先曝红层，所以不论光源什么颜色，晕都是红橙色，而且只在路灯、窗户、太阳这类真正的亮光源周围出现。
+4. 压回显示值（kernel `screenCompress`），是第 1 步的精确逆。柔光和光晕都为 0 时整个往返不改变像素，LUT 看到的就是原图。
+5. `ColorGrader.lut` 套这款的印片 LUT。
+6. `FilmFinish` 收尾，但光晕置 0（已经在第 3 步做过），只做褪色、颗粒、暗角。颗粒板每 1/24 秒换一个平铺偏移（按帧序号乘黄金比例取小数，横竖各一个），预览和视频里颗粒像胶片一样逐帧跳动；其他分类的颗粒仍然固定不动。
+
+模糊半径按短边的比例算，预览和成片看起来一样。缩略图跳过第 1 到 4 步。工作格式是半浮点，场景光的 12 存得下。颜色 kernel 里的 `whiteness` 用 Display P3 的亮度系数，和脚本里 sRGB 的系数算出来是同一个亮度。
+
+| id | 柔光 | 光晕 | 颗粒 |
+| --- | --- | --- | --- |
+| `screen-250d` | 0.25 | 0.3 | 0.15 |
+| `screen-50d` | 0.15 | 0.2 | 0.08 |
+| `screen-200t` | 0.3 | 0.35 | 0.18 |
+| `screen-golden` | 0.45 | 0.4 | 0.15 |
+| `screen-500t` | 0.35 | 0.5 | 0.3 |
+| `screen-500t-blue` | 0.3 | 0.4 | 0.3 |
+| `screen-premier` | 0.15 | 0.25 | 0.08 |
+
+参数是离线在合成夜景（点光源、窗户、肤色块、灰阶条）上对照调出来的，Python 原型复用 `BakeScreenLUTs.py` 的 `scene_light` 和 `apply_lut`。
+
+#### 银幕的 RAW 成片
+
+取景和其他分类都从处理过的照片出发，第 1 步的还原只是近似：手机照片里有局部色调映射，暗部被提亮了约三档（下面样张里场景 1.3% 的暗部，Apple 显影后是 0.264，关掉局部色调映射是 0.017），天空和高光被压平，全局曲线还原不回来。所以银幕款拍照时改拍 ProRAW（采集见 [capture.md](capture.md)），显影出线性的场景光，跳过第 1 步，直接进柔光、光晕、压回、LUT。
+
+`ScreenPrint.sceneLight` 用 kernel `screenLinear` 把显影结果换成和第 1 步同一套场景光：
+
+1. 解码工作空间的传输曲线，乘 `2^(2 + baselineExposure + 0.5)`。2 是显影时压掉的两档；`baselineExposure` 是文件自己的基准曝光（样张是 −0.30）；0.5 是额外补的半档：关掉局部色调映射以后，文件自己的曝光印出来中位亮度 0.38，比手机照片和取景（约 0.52）暗；补半档后是 0.48。
+2. 高光延伸：norm 超过 1.2 以后斜率变成 4。传感器在中灰上约四档就截了（样张场景光最大 2.9），而负片还能往上记录；取景路径里截掉的灯会被还原到 9.9。延伸后样张最亮处约 8，灯、反光、太阳能和取景一样长出光晕，印出来也能到白。只有 0.15% 的像素超过 1.2，云和天空不受影响。
+
+离线验证用的是公开的 iPhone 12 Pro ProRAW 样张（Photoprism 的 samples 库），在 Mac 上用同一套 `CIRAWFilter` 参数显影，再用 Python 原型套 2383。和照片路径比：天空更深、云有层次、逆光的前景暗下去，不再是手机那种处处提亮的 HDR 感。
+
+取景仍然是处理过的视频帧加第 1 步的近似，所以银幕款拍出来的照片会比取景暗部更深、反差更大。这是有意的：取景负责构图，成片才是真正的印片。
+
+```bash
+uv venv -p 3.13 /tmp/sf/venv
+git clone --depth 1 https://github.com/andreavolpato/spektrafilm /tmp/sf/spektrafilm
+uv pip install --python /tmp/sf/venv numpy scipy colour-science scikit-image matplotlib opt-einsum numba OpenImageIO pyfftw rawpy exiv2 lensfunpy Pillow
+uv pip install --python /tmp/sf/venv --no-deps -e /tmp/sf/spektrafilm
+/tmp/sf/venv/bin/python Tools/BakeScreenLUTs.py probe          # 每款的灰阶
+/tmp/sf/venv/bin/python Tools/BakeScreenLUTs.py bake           # 写 ScreenLUTs/
+/tmp/sf/venv/bin/python Tools/BakeScreenLUTs.py chart out.png  # 色卡、肤色、色相、灰阶对比图
+```
+
+GUI 依赖（PySide6、napari）不用装。一次全部烘焙约 10 秒。
+
 胶片 LUT 的署名和改动说明在 `Resources/FilmLUTs/FilmSimulation-LICENSE.txt`，跟着应用一起打包。CC BY-SA 要求署名、给出许可链接、注明改动，改过的 LUT 仍按 CC BY-SA 发布。以后上架时，应用里要有一处能看到这段署名。
 
 没用的来源和原因：
 
-- spektrafilm：光谱级胶片模拟，效果最好。但代码是 GPLv3，导出的 LUT 另有「不得转售」条款，作者明确不希望 LUT 被打包进闭源应用。
 - Stuart Sowerby 的富士 X-Trans III 模拟：没有写许可。
 - cedeber/hald-clut 里的 Apple Photos 和 Pixelmator 表：是商业软件的输出。
 
@@ -158,7 +233,7 @@ swiftc -O Tools/ImportFilmLUTs.swift -o /tmp/import-luts
 | `id` | string | `Look.id` |
 | `name` | string | 界面名称 |
 | `about` | string | 这款在做什么 |
-| `grade` | `lut` / `builtIn` | 原图不写 |
+| `grade` | `lut` / `builtIn` / `effect` / `screen` | 原图不写。`screen` 是银幕的 LUT 加场景光柔光、光晕 |
 | `lut` | string | LUT 图文件名，不含扩展名 |
 | `filter` | string | `builtIn` 用的 Core Image 滤镜名 |
 | `strength` | number | 第一次套上时的强度，0 到 1，缺省 1 |
@@ -167,6 +242,7 @@ swiftc -O Tools/ImportFilmLUTs.swift -o /tmp/import-luts
 | `grain` | number | 颗粒默认值，缺省 0 |
 | `grainPlate` | `fine` / `coarse` | 缺省细板 |
 | `vignette` | number | 暗角默认值，缺省 0 |
+| `diffusion` | number | 柔光默认值，缺省 0，只有 `screen` 款用 |
 
 `grade` 不认识，或 `builtIn` 没写 `filter` 时，这一条被跳过，不会冒充原图出现在目录里。界面按 `LookLibrary.families` 分组显示，不按数组平铺。没有放进任何分组的款落到「其他」。`Looks.json` 缺失或解码失败时只剩内置原图。
 

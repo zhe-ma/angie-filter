@@ -7,12 +7,13 @@ enum FilmFinish {
         _ image: CIImage,
         adjustment: LookAdjustment,
         grainPlate: GrainPlateKind,
-        quality: RenderQuality
+        quality: RenderQuality,
+        grainShift: CGPoint = .zero
     ) -> CIImage {
         var finished = applyFade(image, amount: adjustment.fade)
         if quality != .thumbnail {
             finished = applyHalation(finished, amount: adjustment.halation, quality: quality)
-            finished = applyGrain(finished, plate: grainPlate, amount: adjustment.grain)
+            finished = applyGrain(finished, plate: grainPlate, amount: adjustment.grain, shift: grainShift)
         }
         return applyVignette(finished, amount: adjustment.vignette)
     }
@@ -77,7 +78,8 @@ enum FilmFinish {
 
     /// A tiled plate in soft light, masked so grain sits in the shadows and pure white stays clean.
     /// A look without a plate that has its grain raised uses the fine plate.
-    private static func applyGrain(_ image: CIImage, plate plateKind: GrainPlateKind, amount: Float) -> CIImage {
+    /// `shift` moves the plate as a fraction of one tile, so a caller can give each frame its own grain.
+    private static func applyGrain(_ image: CIImage, plate plateKind: GrainPlateKind, amount: Float, shift: CGPoint) -> CIImage {
         let resolved: GrainPlateKind = plateKind == .none ? .fine : plateKind
         guard amount > 0.001, let plate = GrainLibrary.image(for: resolved) else { return image }
         let extent = image.extent
@@ -85,9 +87,11 @@ enum FilmFinish {
 
         let repeats: CGFloat = resolved == .coarse ? 1.7 : 3
         let scale = (extent.width / repeats) / plate.extent.width
+        let tile = plate.extent.width * scale
         let tiled = plate
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             .applyingFilter("CIAffineTile")
+            .transformed(by: CGAffineTransform(translationX: (shift.x * tile).rounded(), y: (shift.y * tile).rounded()))
             .cropped(to: extent)
         let soft = tiled.applyingFilter("CISoftLightBlendMode", parameters: [
             kCIInputBackgroundImageKey: image

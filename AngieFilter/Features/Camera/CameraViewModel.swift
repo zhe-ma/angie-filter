@@ -75,6 +75,7 @@ enum LiveReview: Equatable {
 @MainActor
 final class CameraViewModel: ObservableObject {
     private static let liveKey = "capture.live"
+    private static let frameRateKey = "capture.frameRate"
 
     @Published private(set) var status = CameraStatus()
     @Published var aspectRatio: AspectRatio = .threeFour
@@ -93,6 +94,9 @@ final class CameraViewModel: ObservableObject {
     @Published var isSaving = false
     @Published private(set) var liveWanted = UserDefaults.standard.bool(forKey: CameraViewModel.liveKey)
     @Published private(set) var mode = CaptureMode.photo
+    @Published private(set) var frameRate = VideoFrameRate(
+        rawValue: UserDefaults.standard.integer(forKey: CameraViewModel.frameRateKey)
+    ) ?? .thirty
     @Published private(set) var isRecording = false
     @Published private(set) var recordingSeconds = 0
     @Published private(set) var reviewVideo: URL?
@@ -187,7 +191,7 @@ final class CameraViewModel: ObservableObject {
         places.onDenied = { [weak self] in
             guard let self else { return }
             self.placeText = ""
-            self.placeMissing = self.frame.showsPlace && self.frame.allowsCaption
+            self.placeMissing = self.frame.showsPlace && self.frame.style.printsInfo
             self.syncParameters()
         }
         MotionHub.shared.onHold = { [weak self] hold in
@@ -197,6 +201,8 @@ final class CameraViewModel: ObservableObject {
         syncParameters()
         MainThreadWatch.start()
         session.setLivePhoto(liveWanted)
+        session.setVideoFrameRate(frameRate)
+        dualSession.setVideoFrameRate(frameRate)
         session.start()
         dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -487,7 +493,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func setCustomText(_ text: String) {
-        let next = FrameSettings.limited(text)
+        let next = FrameSettings.limited(text, style: frame.style)
         guard next != frame.customText else { return }
         frame.customText = next
         syncParameters()
@@ -616,6 +622,15 @@ final class CameraViewModel: ObservableObject {
         mode = next
         session.setVideoMode(next == .video)
         dualSession.setVideoMode(next == .video)
+    }
+
+    func toggleFrameRate() {
+        guard mode == .video, !isRecording else { return }
+        frameRate = frameRate.next
+        UserDefaults.standard.set(frameRate.rawValue, forKey: Self.frameRateKey)
+        session.setVideoFrameRate(frameRate)
+        dualSession.setVideoFrameRate(frameRate)
+        flashBanner(frameRate == .twentyFour ? "24 帧，电影的帧率" : "30 帧")
     }
 
     /// The frame, aspect, and dual layout fix the movie's size, so they lock while recording. Looks can still change.
@@ -918,7 +933,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func refreshPlaceTracking() {
-        let wants = frame.showsPlace && frame.allowsCaption
+        let wants = frame.showsPlace && frame.style.printsInfo
         if wants {
             placeMissing = placeText.isEmpty
             places.start()

@@ -1,0 +1,9 @@
+[
+  {"id": "screen-250d", "name": "2383 放映", "about": "Vision3 250D 负片印到柯达 2383 放映拷贝，spektrafilm 光谱模拟。中灰中性，暗部略带青。", "grade": "screen", "lut": "screen-250d", "strength": 1, "diffusion": 0.25, "halation": 0.3, "grain": 0.15, "grainPlate": "fine"},
+  {"id": "screen-50d", "name": "50D 日景", "about": "Vision3 50D 细颗粒日光片印 2383，反差干净，颜色最实。", "grade": "screen", "lut": "screen-50d", "strength": 1, "diffusion": 0.15, "halation": 0.2, "grain": 0.08, "grainPlate": "fine"},
+  {"id": "screen-200t", "name": "200T 暖印", "about": "Vision3 200T 印 2383，配光偏暖，像钨丝灯下的室内戏。", "grade": "screen", "lut": "screen-200t", "strength": 1, "diffusion": 0.3, "halation": 0.35, "grain": 0.18, "grainPlate": "fine"},
+  {"id": "screen-golden", "name": "黄金时刻", "about": "250D 印 2383 时大幅偏暖，日落时段的配光，柔光镜加得重。", "grade": "screen", "lut": "screen-golden", "strength": 1, "diffusion": 0.45, "halation": 0.4, "grain": 0.15, "grainPlate": "fine"},
+  {"id": "screen-500t", "name": "500T 夜戏", "about": "Vision3 500T 高速片印 2383，配光略冷，暗部留得多，灯光周围红晕明显，适合夜景。", "grade": "screen", "lut": "screen-500t", "strength": 1, "diffusion": 0.35, "halation": 0.5, "grain": 0.3, "grainPlate": "fine"},
+  {"id": "screen-500t-blue", "name": "日光 500T", "about": "灯光片不加 85 滤镜在日光下拍，整体偏蓝的冷调。", "grade": "screen", "lut": "screen-500t-blue", "strength": 1, "diffusion": 0.3, "halation": 0.4, "grain": 0.3, "grainPlate": "fine"},
+  {"id": "screen-premier", "name": "2393 高级拷贝", "about": "250D 印柯达 Vision Premier 2393，黑位更深，颜色更浓。", "grade": "screen", "lut": "screen-premier", "strength": 1, "diffusion": 0.15, "halation": 0.25, "grain": 0.08, "grainPlate": "fine"}
+]

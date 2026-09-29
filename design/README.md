@@ -23,12 +23,12 @@ AngieFilter 是一台 iOS 滤镜相机：拍摄时把风格套在预览上，按
 
 ## 当前实现
 
-拍摄主路径、滤镜面板和渲染已经接上。渲染框架是 Core Image，正式分类只用系统内置滤镜。`Look.grade` 决定颜色从哪来：LUT 走 `CIColorCubeWithColorSpace`，内置款直接调用 Core Image 的照片效果。颜色之后所有款共用 `FilmFinish`：褪色、光晕、颗粒、暗角。`LookLibrary` 读 `Looks.json` 和实验室的 `LabLooks.json`。实验室走 `EffectChain`，复现竞品的处理链。分类是原图、实验室、柯达、富士、GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头、StormCam、Halide、拍立得、黑白、爱克发、电影感、系统。预览、成片和缩略图都调用 `GradeApplicator.apply(look:)`。
+拍摄主路径、滤镜面板和渲染已经接上。渲染框架是 Core Image，正式分类只用系统内置滤镜。`Look.grade` 决定颜色从哪来：LUT 走 `CIColorCubeWithColorSpace`，内置款直接调用 Core Image 的照片效果。颜色之后所有款共用 `FilmFinish`：褪色、光晕、颗粒、暗角。`LookLibrary` 读 `Looks.json`、实验室的 `LabLooks.json` 和银幕的 `ScreenLooks.json`。实验室走 `EffectChain`，复现竞品的处理链。分类是原图、银幕、实验室、柯达、富士、GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头、StormCam、Halide、拍立得、黑白、爱克发、电影感、系统。预览、成片和缩略图都调用 `GradeApplicator.apply(look:)`。
 
 相框在调色之后套上。样式有留白、暗房、相纸、窗线、角标、压底、拍立得、印记。窗线、角标、压底盖在照片上。角标、压底、拍立得、印记可以印型号、地点、日期和一行短句。地点默认关，打开后用使用期间的位置，印成「城市 · 区」。
 
 双摄在支持多摄的真机上打开。前后广角同时取景，排列是上下、左右、画中画、圆窗、叠加。画中画和圆窗的小窗可以拖。两路滤镜分开记。模拟器不显示入口。单摄仍是原来的虚拟相机。
 
-正式资源：62 款胶片 LUT 来自 RawTherapee Film Simulation Collection（CC BY-SA 4.0），由 `Tools/ImportFilmLUTs.swift` 从 HaldCLUT 重采样成 512×512 PNG，同时写出 `Looks.json` 和两张颗粒板。署名在 `Resources/FilmLUTs/FilmSimulation-LICENSE.txt`。另有 8 款 Core Image 照片效果。富士官方的 18 款按下载页的五个系列分组，由 `Tools/ImportFujiLUTs.swift` 从 F-Log2 LUT 合成，没有再分发许可，只用于本地构建。StormCam 的 11 款标准影调和 16 款 Log 影调来自 StormCam 1.5.4 逆向解密出的 cube，由 `Tools/ImportStormCamLUTs.swift` 转换，Log 款先把成片换算成 Apple Log。Halide 的 6 款创意 Look 用 Halide 3.1.1 安装包里的原版 `.ccube`，由 `Tools/ImportHalideLUTs.swift` 把成片换算到 Apple Log 输入后烘焙，锐度和光晕走实验室的 Halide 链，目录在 `LabLooks.json`。
+正式资源：62 款胶片 LUT 来自 RawTherapee Film Simulation Collection（CC BY-SA 4.0），由 `Tools/ImportFilmLUTs.swift` 从 HaldCLUT 重采样成 512×512 PNG，同时写出 `Looks.json` 和两张颗粒板。署名在 `Resources/FilmLUTs/FilmSimulation-LICENSE.txt`。另有 8 款 Core Image 照片效果。富士官方的 18 款按下载页的五个系列分组，由 `Tools/ImportFujiLUTs.swift` 从 F-Log2 LUT 合成，没有再分发许可，只用于本地构建。StormCam 的 11 款标准影调和 16 款 Log 影调来自 StormCam 1.5.4 逆向解密出的 cube，由 `Tools/ImportStormCamLUTs.swift` 转换，Log 款先把成片换算成 Apple Log。Halide 的 6 款创意 Look 用 Halide 3.1.1 安装包里的原版 `.ccube`，由 `Tools/ImportHalideLUTs.swift` 把成片换算到 Apple Log 输入后烘焙，锐度和光晕走实验室的 Halide 链，目录在 `LabLooks.json`。银幕的 7 款由 `Tools/BakeScreenLUTs.py` 用 spektrafilm 光谱模拟 Vision3 负片印 2383 / 2393 烘焙。
 
 视觉验收组是波特拉 400、Pro 400H、Velvia 50、Tri-X 400、宝丽来 669、大片，场景见 [product.md](product.md)。模拟器没有相机。双摄还要在真机上看两路是否同时出画、小窗拖动，以及成片是否和预览一致。

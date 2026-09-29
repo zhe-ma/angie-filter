@@ -12,6 +12,12 @@ enum EffectKernels {
     static let addColor = color("addColor")
     static let subtract = color("subtractImage")
     static let mtfCombine = color("mtfCombine")
+    static let screenExpand = color("screenExpand")
+    static let screenCompress = color("screenCompress")
+    static let screenLinear = color("screenLinear")
+    static let screenMist = color("screenMist")
+    static let screenBright = color("screenBright")
+    static let screenHalation = color("screenHalation")
 
     private static let library: Data? = {
         guard let url = Bundle.main.url(forResource: "default", withExtension: "metallib") else {

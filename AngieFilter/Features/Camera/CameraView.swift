@@ -236,10 +236,23 @@ struct CameraView: View {
             trayButton(flashSymbol, on: model.status.flashMode != .off, action: model.cycleFlash)
                 .disabled(!model.flashAvailable)
                 .opacity(model.flashAvailable ? 1 : 0.3)
-            trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",
-                       on: model.liveWanted && model.liveAvailable, action: model.toggleLive)
-                .disabled(!model.liveAvailable)
-                .opacity(model.liveAvailable ? 1 : 0.3)
+            if model.mode == .video {
+                Button(action: model.toggleFrameRate) {
+                    Text(model.frameRate.label)
+                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(model.frameRate == .twentyFour ? CameraPalette.accent : Color.white)
+                        .upright(model.iconAngle)
+                        .frame(width: 50, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .lockedWhileRecording(model.isRecording)
+            } else {
+                trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",
+                           on: model.liveWanted && model.liveAvailable, action: model.toggleLive)
+                    .disabled(!model.liveAvailable)
+                    .opacity(model.liveAvailable ? 1 : 0.3)
+            }
             Menu {
                 Picker("画幅", selection: Binding(
                     get: { model.aspectRatio },
@@ -400,7 +413,13 @@ struct CameraView: View {
     }
 
     private var adjustKeys: [AdjustKey] {
-        AdjustKey.allCases.filter { $0 != .halation || model.selectedLook.showsHalation }
+        AdjustKey.allCases.filter {
+            switch $0 {
+            case .halation: return model.selectedLook.showsHalation
+            case .diffusion: return model.selectedLook.showsDiffusion
+            default: return true
+            }
+        }
     }
 
     private var activeAdjustKey: AdjustKey {
@@ -487,10 +506,12 @@ struct CameraView: View {
                     frameStyleTab("压底", style: .scrim)
                     frameStyleTab("拍立得", style: .instant)
                     frameStyleTab("印记", style: .captioned)
+                    frameStyleTab("字幕", style: .subtitle)
+                    frameStyleTab("海报", style: .poster)
                 }
                 .padding(.horizontal, 12)
             }
-            if model.frame.allowsCaption {
+            if model.frame.style.printsInfo {
                 HStack(spacing: 18) {
                     frameToggle("型号", on: model.frame.showsModel) { model.setShowsModel($0) }
                     frameToggle("地点", on: model.frame.showsPlace) { model.setShowsPlace($0) }
@@ -504,7 +525,9 @@ struct CameraView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.84))
                 .padding(.horizontal, 20)
-                TextField("一行短句", text: Binding(
+            }
+            if model.frame.allowsCaption {
+                TextField(model.frame.style.customTextPrompt, text: Binding(
                     get: { model.frame.customText },
                     set: { model.setCustomText($0) }
                 ))
@@ -682,7 +705,7 @@ struct CameraView: View {
 }
 
 private enum AdjustKey: CaseIterable, Identifiable {
-    case intensity, fade, halation, grain, vignette
+    case intensity, fade, diffusion, halation, grain, vignette
 
     var id: Self { self }
 
@@ -690,6 +713,7 @@ private enum AdjustKey: CaseIterable, Identifiable {
         switch self {
         case .intensity: return "强度"
         case .fade: return "褪色"
+        case .diffusion: return "柔光"
         case .halation: return "光晕"
         case .grain: return "颗粒"
         case .vignette: return "暗角"
@@ -705,6 +729,7 @@ private enum AdjustKey: CaseIterable, Identifiable {
         switch self {
         case .intensity: return adjustment.intensity
         case .fade: return adjustment.fade
+        case .diffusion: return adjustment.diffusion
         case .halation: return adjustment.halation
         case .grain: return adjustment.grain
         case .vignette: return adjustment.vignette
@@ -715,6 +740,7 @@ private enum AdjustKey: CaseIterable, Identifiable {
         switch self {
         case .intensity: adjustment.intensity = value
         case .fade: adjustment.fade = value
+        case .diffusion: adjustment.diffusion = value
         case .halation: adjustment.halation = value
         case .grain: adjustment.grain = value
         case .vignette: adjustment.vignette = value
