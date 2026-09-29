@@ -185,5 +185,94 @@ float4 screenHalation(sample_t scene, sample_t near, sample_t far, float gain, f
     return float4(scene.rgb + gain * glow * tint, scene.a);
 }
 
+// MARK: - 美颜, on gamma-encoded Display P3
+
+// A face as an ellipse: center and radii in pixels, turned by `roll`. 1 over the inner 60%, then fading to 0.
+static float faceEllipse(float2 p, float4 face, float roll) {
+    if (face.z <= 0.0) {
+        return 0.0;
+    }
+    float2 d = p - face.xy;
+    float c = cos(roll);
+    float s = sin(roll);
+    float2 q = float2(c * d.x + s * d.y, c * d.y - s * d.x) / face.zw;
+    return 1.0 - smoothstep(0.6, 1.0, length(q));
+}
+
+// Where the retouch acts, in R: inside a face, on colors bright enough and not blue enough to rule out skin.
+// Hair, brows, and a blue background fall out; skin under a cool light stays in. `blurred` is the source
+// blurred to a few percent of the face, so the mask has no texture of its own.
+float4 skinMask(sample_t blurred, float4 face0, float4 face1, float4 face2, float4 face3, float4 rolls, destination dest) {
+    float2 p = dest.coord();
+    float inside = max(max(faceEllipse(p, face0, rolls.x), faceEllipse(p, face1, rolls.y)),
+                       max(faceEllipse(p, face2, rolls.z), faceEllipse(p, face3, rolls.w)));
+    float3 c = blurred.rgb;
+    float y = dot(c, p3Luma);
+    float skin = smoothstep(-0.12, -0.02, c.r - c.b) * smoothstep(0.08, 0.2, y);
+    float m = inside * skin;
+    return float4(m, m, m, 1.0);
+}
+
+// Small swings of a band go, large ones stay: spots and blotches are shallow, an eyelid or a nostril is not.
+static float cored(float band, float threshold, float amount) {
+    float t = band / threshold;
+    return band * amount * exp(-t * t);
+}
+
+// Skin luma from four blurs of the frame, finest to widest. Detail finer than `fine` is left alone, so pores stay.
+// The spot band (fine to mid) and the blotch band (mid to wide) lose their shallow swings; the shading band
+// (wide to widest) is flattened by `fill`, as a fill light would. Every channel shifts by the same amount.
+float4 skinSmooth(sample_t color, sample_t fine, sample_t mid, sample_t wide, sample_t widest, sample_t mask,
+                  float spotThreshold, float blotchThreshold, float spots, float blotches, float fill) {
+    float g1 = dot(fine.rgb, p3Luma);
+    float g2 = dot(mid.rgb, p3Luma);
+    float g3 = dot(wide.rgb, p3Luma);
+    float g4 = dot(widest.rgb, p3Luma);
+    float delta = cored(g1 - g2, spotThreshold, spots) + cored(g2 - g3, blotchThreshold, blotches) + (g3 - g4) * fill;
+    return float4(color.rgb - delta * mask.r, color.a);
+}
+
+// Light scaled by what the smoothing did to the display pixel, through the same expansion as `screenExpand`,
+// for a 银幕 print that starts from scene light.
+static float expandedNorm(float n, float white) {
+    float m = clamp(n, 0.0, 1.0);
+    float w2 = white * white;
+    float b = 1.0 - m;
+    return (-b + sqrt(b * b + 4.0 * m / w2)) * w2 * 0.5;
+}
+
+float4 skinRelight(sample_t scene, sample_t display, sample_t smoothed, float white) {
+    float before = expandedNorm(whiteness(decodeTransfer(clamp(display.rgb, 0.0, 1.0))), white);
+    float after = expandedNorm(whiteness(decodeTransfer(clamp(smoothed.rgb, 0.0, 1.0))), white);
+    float gain = before > 0.00001 ? after / before : 1.0;
+    return float4(scene.rgb * gain, scene.a);
+}
+
+// Chroma as red and blue less luma, weighted by the mask, with the mask itself, so a blur of it
+// averages skin's color and nothing around it.
+float4 skinChromaPack(sample_t color, sample_t mask) {
+    float y = dot(color.rgb, p3Luma);
+    float m = mask.r;
+    return float4((color.r - y) * m, (color.b - y) * m, m, 1.0);
+}
+
+// After the look: skin's color moves toward the face's average by `evenness`, which closes the gap between
+// a lit cheek and a shaded one. Colors far from the average, lips and eyes, keep theirs. Then skin lifts
+// toward white by `glow`, which brightens it and softens its contrast a little, as a screen would.
+float4 skinFinish(sample_t color, sample_t average, sample_t mask, float evenness, float reach, float glow) {
+    float3 c = color.rgb;
+    float y = dot(c, p3Luma);
+    float m = mask.r;
+    float2 chroma = float2(c.r - y, c.b - y);
+    float2 target = average.rg / max(average.b, 0.001);
+    float2 gap = chroma - target;
+    float pull = m * evenness * exp(-dot(gap, gap) / (reach * reach)) * smoothstep(0.02, 0.1, average.b);
+    chroma -= gap * pull;
+    float r = y + chroma.x;
+    float b = y + chroma.y;
+    float3 even = float3(r, (y - p3Luma.r * r - p3Luma.b * b) / p3Luma.g, b);
+    return float4(even + (1.0 - clamp(even, 0.0, 1.0)) * m * glow, color.a);
+}
+
 }
 }

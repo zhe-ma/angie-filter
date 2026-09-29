@@ -23,7 +23,7 @@ AngieFilter 是一台 iOS 滤镜相机：拍摄时把风格套在预览上，按
 
 ## 当前实现
 
-拍摄主路径、滤镜面板和渲染已经接上。渲染框架是 Core Image，正式分类只用系统内置滤镜。`Look.grade` 决定颜色从哪来：LUT 走 `CIColorCubeWithColorSpace`，内置款直接调用 Core Image 的照片效果。颜色之后所有款共用 `FilmFinish`：褪色、光晕、颗粒、暗角。`LookLibrary` 读 `Looks.json`、实验室的 `LabLooks.json` 和银幕的 `ScreenLooks.json`。实验室走 `EffectChain`，复现竞品的处理链。分类是原图、银幕、实验室、柯达、富士、GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头、StormCam、Halide、拍立得、黑白、爱克发、电影感、系统。预览、成片和缩略图都调用 `GradeApplicator.apply(look:)`。
+拍摄主路径、滤镜面板和渲染已经接上。渲染框架是 Core Image，正式分类只用系统内置滤镜。`Look.grade` 决定颜色从哪来：LUT 走 `CIColorCubeWithColorSpace`，内置款直接调用 Core Image 的照片效果。颜色之后所有款共用 `FilmFinish`：褪色、光晕、颗粒、暗角。`LookLibrary` 读 `Looks.json`、实验室的 `LabLooks.json` 和银幕的 `ScreenLooks.json`。实验室走 `EffectChain`，复现竞品的处理链。分类是原图、银幕、实验室、柯达、富士、GFX 电影机、GFX 无反、GFX 固定镜头、X 无反、X 固定镜头、StormCam、Halide、拍立得、黑白、爱克发、电影感、系统。预览、成片和缩略图都调用 `GradeApplicator.apply(look:)`。美颜是工具托盘上的开关，打开后 `FrameImageMaker.graded` 在调色前后接上 `SkinRetouch`：Vision 找脸，调色前亮度分层去斑、补光，调色后肤色往平均拉、提亮，所有滤镜都生效。
 
 相框在调色之后套上。样式有留白、暗房、相纸、窗线、角标、压底、拍立得、印记。窗线、角标、压底盖在照片上。角标、压底、拍立得、印记可以印型号、地点、日期和一行短句。地点默认关，打开后用使用期间的位置，印成「城市 · 区」。
 

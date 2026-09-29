@@ -21,6 +21,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let videoOutput = AVCaptureVideoDataOutput()
     private let parameters = Locked(RenderParameters())
     private let thumbnailTap = ThumbnailFrameTap()
+    private let faceTracker = FaceTracker()
     private let captureFacing = Locked(CameraFacing.back)
     private var status = CameraStatus()
     private var device: AVCaptureDevice?
@@ -369,7 +370,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             : nil
         let source = log?.display ?? FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
         thumbnailTap.offer(source)
-        let graded = FrameImageMaker.graded(source, scene: log?.scene, parameters: renderParameters)
+        let faces = renderParameters.beauty > 0 ? faceTracker.faces(offering: source) : []
+        let graded = FrameImageMaker.graded(source, scene: log?.scene, faces: faces, parameters: renderParameters)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         previewView.draw(image: framed, token: previewToken.with { $0 })
         if let active = recorder.with({ $0 }) {
@@ -421,19 +423,22 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         renderParameters.framePlace = shutterPlace.with { $0 }
         renderParameters.hold = shutterHold.with { $0 }
         let start = PerfLog.now()
-        let framed = stillPipeline(photoImage, scene: scene, parameters: renderParameters)
+        let faces = renderParameters.beauty > 0
+            ? FaceTracker.detect(in: FrameImageMaker.sourceImage(from: photoImage, parameters: renderParameters))
+            : []
+        let framed = stillPipeline(photoImage, scene: scene, faces: faces, parameters: renderParameters)
         guard let image = previewView.makeImage(framed) else {
             publishFailure("照片处理失败")
             return
         }
-        if scene != nil {
-            PerfLog.line("proraw still graded in \(Int(PerfLog.ms(since: start)))ms")
+        if scene != nil || renderParameters.beauty > 0 {
+            PerfLog.line("still graded in \(Int(PerfLog.ms(since: start)))ms, proraw \(scene != nil), faces \(faces.count)")
         }
         let id = photo.resolvedSettings.uniqueID
         let live = photo.resolvedSettings.livePhotoMovieDimensions.width > 0
             && liveShots.with { shots -> Bool in
                 guard shots[id] != nil else { return false }
-                shots[id]?.still = (image, renderParameters)
+                shots[id]?.still = (image, renderParameters, faces)
                 return true
             }
         DispatchQueue.main.async { [weak self] in
@@ -497,6 +502,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             movie: folder.appendingPathComponent("live-\(identifier).mov")
         )
         let parameters = still.parameters
+        let faces = still.faces
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let start = PerfLog.now()
@@ -508,7 +514,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                     identifier: identifier,
                     stillTime: movie.stillTime
                 ) { [weak self] frame in
-                    self?.stillPipeline(frame, parameters: parameters) ?? frame
+                    self?.stillPipeline(frame, faces: faces, parameters: parameters) ?? frame
                 }
                 try? FileManager.default.removeItem(at: movie.url)
                 PerfLog.line("live movie rendered in \(Int(PerfLog.ms(since: start)))ms")
@@ -532,11 +538,12 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     /// The still's steps from an upright, unmirrored image: mirror and crop, grade, turn for the hold, frame.
-    /// `scene` is the same shot in scene light, cut the same way.
-    private func stillPipeline(_ image: CIImage, scene: CIImage? = nil, parameters: RenderParameters) -> CIImage {
+    /// `scene` is the same shot in scene light, cut the same way. `faces` are normalized to the cut image;
+    /// a Live Photo's movie frames reuse its still's.
+    private func stillPipeline(_ image: CIImage, scene: CIImage? = nil, faces: [FaceRegion], parameters: RenderParameters) -> CIImage {
         let source = FrameImageMaker.sourceImage(from: image, parameters: parameters)
         let sceneSource = scene.map { FrameImageMaker.sourceImage(from: $0, parameters: parameters) }
-        let graded = FrameImageMaker.graded(source, scene: sceneSource, parameters: parameters)
+        let graded = FrameImageMaker.graded(source, scene: sceneSource, faces: faces, parameters: parameters)
         let turned = FrameImageMaker.turned(graded, hold: parameters.hold)
         return framedImage(turned, parameters: parameters, synchronousCaption: true)
     }
@@ -623,6 +630,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
         session.addInput(input)
         device = next
+        faceTracker.reset()
         applyInitialZoom(on: next)
         status.facing = facing
         parameters.with { $0.orientation = Self.orientation(for: facing) }
@@ -772,6 +780,6 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
 /// The still and the movie finish in either order; the movie is rendered once both are in.
 private struct LiveShot {
-    var still: (image: UIImage, parameters: RenderParameters)?
+    var still: (image: UIImage, parameters: RenderParameters, faces: [FaceRegion])?
     var movie: (url: URL, stillTime: CMTime)?
 }

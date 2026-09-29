@@ -19,6 +19,11 @@ enum EffectKernels {
     static let screenMist = color("screenMist")
     static let screenBright = color("screenBright")
     static let screenHalation = color("screenHalation")
+    static let skinMask = color("skinMask")
+    static let skinSmooth = color("skinSmooth")
+    static let skinRelight = color("skinRelight")
+    static let skinChromaPack = color("skinChromaPack")
+    static let skinFinish = color("skinFinish")
 
     private static let library: Data? = {
         guard let url = Bundle.main.url(forResource: "default", withExtension: "metallib") else {

@@ -38,6 +38,8 @@ struct RenderParameters: Equatable, Sendable {
     /// Stills are turned to this after grading and before the frame. The preview ignores it.
     var hold: HoldOrientation = .portrait
     var quality: RenderQuality = .preview
+    /// 美颜 strength, 0 to 1; 0 is off. Faces get skin smoothing, even color, and a soft highlight, under every look.
+    var beauty: Float = 0
     /// Set while both cameras are composited. Nil on the single-camera path.
     var dual: DualSettings?
 }

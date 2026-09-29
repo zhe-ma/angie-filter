@@ -24,15 +24,22 @@ enum FrameImageMaker {
         prepared(geometry(photoImage, parameters: parameters), quality: parameters.quality)
     }
 
-    static func graded(_ source: CIImage, scene: CIImage? = nil, parameters: RenderParameters) -> CIImage {
+    /// `faces` are normalized to `source`; with 美颜 on they are retouched around the look.
+    static func graded(_ source: CIImage, scene: CIImage? = nil, faces: [FaceRegion] = [], parameters: RenderParameters) -> CIImage {
         let look = LookLibrary.look(id: parameters.lookID)
-        return GradeApplicator.apply(
-            source,
-            scene: scene,
+        guard parameters.quality != .thumbnail,
+              let retouch = SkinRetouch(source: source, faces: faces, amount: parameters.beauty) else {
+            return GradeApplicator.apply(source, scene: scene, look: look, adjustment: parameters.adjustment, quality: parameters.quality)
+        }
+        let smoothed = retouch.smoothed(source)
+        let graded = GradeApplicator.apply(
+            smoothed,
+            scene: scene.map { retouch.relit($0, display: source, smoothed: smoothed) },
             look: look,
             adjustment: parameters.adjustment,
             quality: parameters.quality
         )
+        return retouch.finished(graded)
     }
 
     /// Upright, optionally mirrored, not yet cropped to an aspect.

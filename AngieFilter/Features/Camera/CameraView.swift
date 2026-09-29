@@ -195,13 +195,46 @@ struct CameraView: View {
             if model.dualOn {
                 dualRow
             }
-            if model.dualOn, model.dualLayout == .blend {
+            if model.beautyOpen {
+                beautyRow
+            } else if model.dualOn, model.dualLayout == .blend {
                 veilRow
             } else {
                 focalRing
             }
             toolTray
         }
+        .animation(.easeOut(duration: 0.15), value: model.beautyOpen)
+    }
+
+    /// 美颜 strength. Double-tap the number for the default; 关闭 turns it off and hides the row.
+    private var beautyRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "face.smiling")
+                .font(.system(size: 13))
+                .foregroundStyle(CameraPalette.secondary)
+                .upright(model.iconAngle)
+            Slider(
+                value: Binding(
+                    get: { Double(model.beautyAmount) },
+                    set: { model.setBeautyAmount(Float($0)) }
+                ),
+                in: 0...1
+            )
+            .tint(.white)
+            Text("\(Int((model.beautyAmount * 100).rounded()))")
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .frame(width: 26, alignment: .trailing)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2, perform: model.resetBeautyAmount)
+            Button("关闭") { model.setBeautyOn(false); model.dismissPanels() }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(CameraPalette.secondary)
+                .buttonStyle(.plain)
+        }
+        .frame(height: 40)
+        .padding(.horizontal, 28)
+        .transition(.opacity)
     }
 
     /// Stops in 35mm-equivalent focal lengths. The stop the lens is on, or just past, shows the live value.
@@ -242,7 +275,7 @@ struct CameraView: View {
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         .foregroundStyle(model.frameRate == .twentyFour ? CameraPalette.accent : Color.white)
                         .upright(model.iconAngle)
-                        .frame(width: 50, height: 44)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -263,6 +296,7 @@ struct CameraView: View {
                     .disabled(!model.liveAvailable)
                     .opacity(model.liveAvailable ? 1 : 0.3)
             }
+            trayButton("face.smiling", on: model.beautyOn && model.beautyAmount > 0.005, action: model.tapBeauty)
             Menu {
                 Picker("画幅", selection: Binding(
                     get: { model.aspectRatio },
@@ -277,7 +311,7 @@ struct CameraView: View {
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
                     .upright(model.iconAngle)
-                    .frame(width: 52, height: 44)
+                    .frame(width: 48, height: 44)
                     .contentShape(Rectangle())
             }
             .lockedWhileRecording(model.isRecording)
@@ -301,7 +335,7 @@ struct CameraView: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(on ? CameraPalette.accent : Color.white)
                 .upright(model.iconAngle)
-                .frame(width: 50, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -76,6 +76,10 @@ enum LiveReview: Equatable {
 final class CameraViewModel: ObservableObject {
     private static let liveKey = "capture.live"
     private static let frameRateKey = "capture.frameRate"
+    private static let beautyKey = "capture.beauty"
+    private static let beautyAmountKey = "capture.beautyAmount"
+    /// Light enough that the face still reads as untouched: blotches soften, pores and stubble stay.
+    static let beautyDefault: Float = 0.3
 
     @Published private(set) var status = CameraStatus()
     @Published var aspectRatio: AspectRatio = .threeFour
@@ -93,6 +97,12 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var reviewLive: LiveReview = .none
     @Published var isSaving = false
     @Published private(set) var liveWanted = UserDefaults.standard.bool(forKey: CameraViewModel.liveKey)
+    @Published private(set) var beautyOn = UserDefaults.standard.bool(forKey: CameraViewModel.beautyKey)
+    /// Kept while 美颜 is off, so turning it back on returns to the same strength.
+    @Published private(set) var beautyAmount = UserDefaults.standard.object(forKey: CameraViewModel.beautyAmountKey) as? Float
+        ?? CameraViewModel.beautyDefault
+    /// The strength slider, in place of the focal ring.
+    @Published private(set) var beautyOpen = false
     @Published private(set) var mode = CaptureMode.photo
     @Published private(set) var frameRate = VideoFrameRate(
         rawValue: UserDefaults.standard.integer(forKey: CameraViewModel.frameRateKey)
@@ -440,6 +450,7 @@ final class CameraViewModel: ObservableObject {
 
     func toggleFilters() {
         frameOpen = false
+        beautyOpen = false
         filtersOpen.toggle()
         if filtersOpen {
             familyID = LookLibrary.family(containing: lookID).id
@@ -462,11 +473,13 @@ final class CameraViewModel: ObservableObject {
             return
         }
         if filtersOpen { closeFilters() }
+        beautyOpen = false
         frameOpen = true
     }
 
     func dismissPanels() {
         frameOpen = false
+        beautyOpen = false
         closeFilters()
     }
 
@@ -538,7 +551,7 @@ final class CameraViewModel: ObservableObject {
         let dy = current.y - start.y
         if dx * dx + dy * dy > 64 { return }
         // In dual mode a tap on a pane picks which camera the open filter panel edits.
-        if frameOpen || (filtersOpen && !dualOn) {
+        if frameOpen || beautyOpen || (filtersOpen && !dualOn) {
             dismissPanels()
         }
         let photo = photoRect(in: viewSize)
@@ -714,6 +727,38 @@ final class CameraViewModel: ObservableObject {
         flashBanner(liveWanted ? "实况已打开" : "实况已关闭")
     }
 
+    /// Off: turns 美颜 on at the last strength and shows the slider. On: shows or hides the slider.
+    /// Works under every look, in photos, video, and both cameras, and may change mid-take.
+    func tapBeauty() {
+        guard beautyOn else {
+            setBeautyOn(true)
+            beautyOpen = true
+            return
+        }
+        beautyOpen.toggle()
+    }
+
+    func setBeautyOn(_ on: Bool) {
+        guard beautyOn != on else { return }
+        beautyOn = on
+        if on, beautyAmount < 0.01 {
+            setBeautyAmount(Self.beautyDefault)
+        }
+        UserDefaults.standard.set(on, forKey: Self.beautyKey)
+        syncParameters()
+        flashBanner(on ? "美颜已打开" : "美颜已关闭")
+    }
+
+    func setBeautyAmount(_ value: Float) {
+        beautyAmount = min(max(value, 0), 1)
+        UserDefaults.standard.set(beautyAmount, forKey: Self.beautyAmountKey)
+        syncParameters()
+    }
+
+    func resetBeautyAmount() {
+        setBeautyAmount(Self.beautyDefault)
+    }
+
     func retake() {
         reviewImage = nil
         discardLive()
@@ -770,6 +815,7 @@ final class CameraViewModel: ObservableObject {
 
     private func syncParameters() {
         let hold = hold
+        let beauty = beautyOn ? beautyAmount : 0
         if dualOn {
             let settings = currentDualSettings()
             let aspect = aspectRatio
@@ -782,6 +828,7 @@ final class CameraViewModel: ObservableObject {
                 parameters.frameDate = date
                 parameters.framePlace = place
                 parameters.hold = hold
+                parameters.beauty = beauty
                 parameters.dual = settings
             }
         } else {
@@ -796,6 +843,7 @@ final class CameraViewModel: ObservableObject {
                 parameters.frameDate = previewDate
                 parameters.framePlace = placeText
                 parameters.hold = hold
+                parameters.beauty = beauty
                 parameters.dual = nil
             }
         }

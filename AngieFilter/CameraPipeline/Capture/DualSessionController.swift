@@ -30,6 +30,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let parameters = Locked(RenderParameters())
     private let latest = Locked<[CameraFacing: CIImage]>([:])
     private let thumbnailTaps: [CameraFacing: ThumbnailFrameTap] = [.back: ThumbnailFrameTap(), .front: ThumbnailFrameTap()]
+    private let faceTrackers: [CameraFacing: FaceTracker] = [.back: FaceTracker(), .front: FaceTracker()]
     private let imageAspect = Locked<[CameraFacing: CGFloat]>([:])
     private let selected = Locked(CameraFacing.back)
     private let flashMode = Locked(FlashMode.off)
@@ -398,8 +399,11 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             back: back,
             front: front
         )
-        let gradedBack = grade(back, facing: .back, parameters: capture.parameters, settings: settings)
-        let gradedFront = grade(front, facing: .front, parameters: capture.parameters, settings: settings)
+        let beauty = capture.parameters.beauty > 0
+        let gradedBack = grade(back, facing: .back, parameters: capture.parameters, settings: settings,
+                               faces: beauty ? FaceTracker.detect(in: back) : [])
+        let gradedFront = grade(front, facing: .front, parameters: capture.parameters, settings: settings,
+                                faces: beauty ? FaceTracker.detect(in: front) : [])
         let composed = DualFrameComposer.compose(back: gradedBack, front: gradedFront, settings: settings, canvas: canvas)
         let turned = FrameImageMaker.turned(composed, hold: capture.parameters.hold)
         let framed = framedImage(turned, parameters: capture.parameters, synchronousCaption: true)
@@ -436,8 +440,12 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             return
         }
         let images = latest.with { $0 }
-        let back = images[.back].map { grade($0, facing: .back, parameters: renderParameters, settings: settings) }
-        let front = images[.front].map { grade($0, facing: .front, parameters: renderParameters, settings: settings) }
+        let back = images[.back].map {
+            grade($0, facing: .back, parameters: renderParameters, settings: settings, faces: previewFaces($0, facing: .back, parameters: renderParameters))
+        }
+        let front = images[.front].map {
+            grade($0, facing: .front, parameters: renderParameters, settings: settings, faces: previewFaces($0, facing: .front, parameters: renderParameters))
+        }
         let canvas = DualFrameComposer.previewCanvas(widthOverHeight: renderParameters.aspectRatio.widthOverHeight)
         let composed = DualFrameComposer.compose(back: back, front: front, settings: settings, canvas: canvas)
         let framed = framedImage(composed, parameters: renderParameters, synchronousCaption: false)
@@ -520,11 +528,16 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
     }
 
-    private func grade(_ image: CIImage, facing: CameraFacing, parameters: RenderParameters, settings: DualSettings) -> CIImage {
+    private func grade(_ image: CIImage, facing: CameraFacing, parameters: RenderParameters, settings: DualSettings, faces: [FaceRegion]) -> CIImage {
         var lane = parameters
         lane.lookID = settings.lookID(for: facing)
         lane.adjustment = settings.adjustment(for: facing)
-        return FrameImageMaker.graded(image, parameters: lane)
+        return FrameImageMaker.graded(image, faces: faces, parameters: lane)
+    }
+
+    private func previewFaces(_ image: CIImage, facing: CameraFacing, parameters: RenderParameters) -> [FaceRegion] {
+        guard parameters.beauty > 0 else { return [] }
+        return faceTrackers[facing]?.faces(offering: image) ?? []
     }
 
     private func beginStart(startID: Int) -> DualStartOutcome {
