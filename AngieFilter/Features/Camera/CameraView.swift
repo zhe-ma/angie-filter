@@ -197,6 +197,8 @@ struct CameraView: View {
             }
             if model.beautyOpen {
                 beautyRow
+            } else if model.dollyOpen, model.dollyAvailable {
+                dollyRow
             } else if model.dualOn, model.dualLayout == .blend {
                 veilRow
             } else {
@@ -205,6 +207,32 @@ struct CameraView: View {
             toolTray
         }
         .animation(.easeOut(duration: 0.15), value: model.beautyOpen)
+        .animation(.easeOut(duration: 0.15), value: model.dollyOpen)
+    }
+
+    /// Which way the take walks, which also sets the zoom it starts at; 关闭 turns 希区柯克 off and hides the row.
+    private var dollyRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.and.background.dotted")
+                .font(.system(size: 13))
+                .foregroundStyle(CameraPalette.secondary)
+                .upright(model.iconAngle)
+            HStack(spacing: 4) {
+                ForEach(DollyDirection.allCases) { direction in
+                    tab(direction.rawValue, selected: model.dollyDirection == direction) {
+                        model.setDollyDirection(direction)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            Button("关闭") { model.setDollyOn(false); model.dismissPanels() }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(CameraPalette.secondary)
+                .buttonStyle(.plain)
+        }
+        .frame(height: 40)
+        .padding(.horizontal, 28)
+        .transition(.opacity)
     }
 
     /// 美颜 strength. Double-tap the number for the default; 关闭 turns it off and hides the row.
@@ -291,7 +319,8 @@ struct CameraView: View {
                     }
                 }
                 if model.dollyAvailable {
-                    trayButton("person.and.background.dotted", on: model.dollyOn, action: model.toggleDolly)
+                    trayButton("person.and.background.dotted", on: model.dollyOn, action: model.tapDolly)
+                        .lockedWhileRecording(model.isRecording)
                 }
             } else {
                 trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",

@@ -7,7 +7,8 @@ import QuartzCore
 /// so the zoom a frame was shot at over the face's size there is the distance, up to a constant, whatever the zoom
 /// did meanwhile. DollyCam feeds the zoomed size straight in and ends up short of holding the face.
 /// Every frame the detector is free for is measured; an alpha-beta filter on log distance smooths Vision's wobble
-/// and tracks a steady walk without lagging behind it.
+/// and tracks a steady walk without lagging behind it. Armed for a take, the zoom only goes the way the walk does,
+/// so what wobble is left can't pump it back and forth.
 final class DollyZoom: @unchecked Sendable {
     /// On the detection queue: the zoom to ramp to and the rate, in powers of two per second.
     var onZoom: ((CGFloat, Float) -> Void)?
@@ -40,6 +41,7 @@ final class DollyZoom: @unchecked Sendable {
         var generation = 0
         var device: AVCaptureDevice?
         var range: ClosedRange<CGFloat> = 1...1
+        var direction = DollyDirection.away
         var busy = false
         var face: CGRect?
         var extent: CGSize = .zero
@@ -59,9 +61,9 @@ final class DollyZoom: @unchecked Sendable {
     }
 
     /// The face's size at the next few detections is the size kept. `range` is one lens's, so the picture never jumps.
-    func arm(device: AVCaptureDevice, range: ClosedRange<CGFloat>) {
+    func arm(device: AVCaptureDevice, range: ClosedRange<CGFloat>, direction: DollyDirection) {
         state.with { state in
-            state = State(generation: state.generation + 1, device: device, range: range, face: state.face)
+            state = State(generation: state.generation + 1, device: device, range: range, direction: direction, face: state.face)
             state.zoom = device.videoZoomFactor
         }
     }
@@ -137,7 +139,8 @@ final class DollyZoom: @unchecked Sendable {
             state.filter = filter
             let ahead = filter.distance + filter.speed * Self.lead - baseline.distance
             let wanted = baseline.zoom * CGFloat(exp(ahead))
-            let target = min(max(wanted, state.range.lowerBound), state.range.upperBound)
+            let bounded = min(max(wanted, state.range.lowerBound), state.range.upperBound)
+            let target = state.direction == .away ? max(bounded, state.zoom) : min(bounded, state.zoom)
             if shot - state.lastLog >= 1 {
                 state.lastLog = shot
                 PerfLog.line(String(format: "dolly face %.3f, distance x%.2f, speed %+.2f/s, zoom %.2f -> %.2f",

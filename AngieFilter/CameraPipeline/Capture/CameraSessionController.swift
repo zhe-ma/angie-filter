@@ -46,11 +46,15 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private var liveWanted = false
     private var videoMode = false
     private var dollyWanted = false
+    private var dollyDirection = DollyDirection.away
+    /// The zoom the current 希区柯克 take started at.
+    private var dollyTakeZoom: CGFloat?
     private var lastDollyPublish: CFTimeInterval = 0
     private static let dollyPublishInterval: CFTimeInterval = 0.25
-    /// Times the lens's widest zoom a 希区柯克 take starts from. The 1760-wide preview buffer still comes from more
-    /// sensor pixels than it has at this crop, so nothing softens.
-    private static let dollyHeadroom: CGFloat = 1.4
+    /// Times the main lens's widest a walk toward the face starts at: the face can grow to about 2.5 times its size.
+    private static let dollyTowardStart: CGFloat = 2.5
+    /// Powers of two a second, for the moves to and from a take's start.
+    private static let dollyPresetRate: Float = 3
     /// The device is on an Apple Log format; the session is off its `.photo` preset.
     private var logActive = false
     private var frameRate = VideoFrameRate.thirty
@@ -134,7 +138,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 self.status.zoomFactor = clamped
                 self.status.focalLength = ZoomLadderBuilder.focalLength(for: clamped, on: device)
                 self.publishStatus()
-                // A new framing is a new size to keep.
+                // Mid-take, a new framing is a new size to keep.
                 self.applyDolly()
             } catch {
                 self.publishFailure("变焦失败")
@@ -142,34 +146,37 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
-    /// 希区柯克变焦, in video mode only.
-    func setDollyZoom(_ on: Bool) {
+    /// 希区柯克变焦, in video mode only. Turning it on or picking a direction moves the zoom to where that walk starts;
+    /// it follows the face only during a take, which starts from whatever zoom the shot was framed at.
+    func setDollyZoom(_ on: Bool, direction: DollyDirection) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            let changed = on && (!self.dollyWanted || self.dollyDirection != direction)
             self.dollyWanted = on
-            if on {
-                self.makeDollyHeadroom()
+            self.dollyDirection = direction
+            if changed {
+                self.presetDolly()
             }
             self.applyDolly()
         }
     }
 
-    /// At the bottom of the lens there's nothing to zoom out to when the phone comes closer, so it starts a little in.
-    private func makeDollyHeadroom() {
-        guard videoMode, let device else { return }
-        let range = Self.dollyRange(for: device)
-        let start = min(range.lowerBound * Self.dollyHeadroom, range.upperBound)
-        guard device.videoZoomFactor < start * 0.97, (try? device.lockForConfiguration()) != nil else { return }
-        device.videoZoomFactor = start
+    /// Walking away starts at the main lens's widest. Walking toward starts in, with room to zoom out as the face grows.
+    private func presetDolly() {
+        guard dollyWanted, videoMode, recorder.with({ $0 }) == nil, let device else { return }
+        let range = Self.dollyRange(for: device, at: ZoomLadderBuilder.wideAngleFactor(for: device))
+        let start = dollyDirection == .away ? range.lowerBound : min(range.lowerBound * Self.dollyTowardStart, range.upperBound)
+        guard (try? device.lockForConfiguration()) != nil else { return }
+        device.ramp(toVideoZoomFactor: start, withRate: Self.dollyPresetRate)
         device.unlockForConfiguration()
         status.zoomFactor = start
         status.focalLength = ZoomLadderBuilder.focalLength(for: start, on: device)
         publishStatus()
     }
 
-    /// Arms from the current zoom, which also makes the face's size now the one kept.
+    /// Armed only while recording, from the zoom now, which also makes the face's size now the one kept.
     private func applyDolly() {
-        guard dollyWanted, videoMode, isConfigured, let device else {
+        guard dollyWanted, videoMode, isConfigured, recorder.with({ $0 }) != nil, let device else {
             if dolly.isArmed {
                 dolly.disarm()
                 // The last step may not have reached the focal readout.
@@ -177,9 +184,21 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             }
             return
         }
-        let range = Self.dollyRange(for: device)
-        dolly.arm(device: device, range: range)
-        PerfLog.line(String(format: "dolly armed at %.2f, range %.2f-%.2f", device.videoZoomFactor, range.lowerBound, range.upperBound))
+        let range = Self.dollyRange(for: device, at: device.videoZoomFactor)
+        dolly.arm(device: device, range: range, direction: dollyDirection)
+        PerfLog.line(String(format: "dolly armed %@ at %.2f, range %.2f-%.2f", dollyDirection.rawValue,
+                            device.videoZoomFactor, range.lowerBound, range.upperBound))
+    }
+
+    /// After a take the zoom goes back to where it started, ready for the next.
+    private func returnDollyZoom() {
+        guard dollyWanted, videoMode, let start = dollyTakeZoom, let device, (try? device.lockForConfiguration()) != nil else { return }
+        dollyTakeZoom = nil
+        device.ramp(toVideoZoomFactor: start, withRate: Self.dollyPresetRate)
+        device.unlockForConfiguration()
+        status.zoomFactor = start
+        status.focalLength = ZoomLadderBuilder.focalLength(for: start, on: device)
+        publishStatus()
     }
 
     private func rampDolly(to factor: CGFloat, rate: Float) {
@@ -196,10 +215,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
-    /// The span of the lens the zoom is on now, up to the zoom ceiling: past a switch-over the virtual camera changes lens
+    /// The span of the lens `zoom` is on, up to the zoom ceiling: past a switch-over the virtual camera changes lens
     /// and the picture jumps.
-    private static func dollyRange(for device: AVCaptureDevice) -> ClosedRange<CGFloat> {
-        let zoom = device.videoZoomFactor
+    private static func dollyRange(for device: AVCaptureDevice, at zoom: CGFloat) -> ClosedRange<CGFloat> {
         let switches = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) }
         let lower = ([device.minAvailableVideoZoomFactor] + switches.filter { $0 <= zoom + 0.001 }).max() ?? zoom
         let ceiling = ZoomLadderBuilder.clamped(.greatestFiniteMagnitude, on: device)
@@ -249,6 +267,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 self.applyLogVideo()
                 self.applyExtrasAskingForMicrophone(on)
             }
+            self.presetDolly()
             self.applyDolly()
         }
     }
@@ -272,6 +291,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             let fps = self.device.flatMap(Self.lockedFrameRate) ?? 30
             self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound, frameRate: fps) }
             // The take keeps the face at its size when it starts.
+            self.dollyTakeZoom = self.dollyWanted && self.videoMode ? self.device?.videoZoomFactor : nil
             self.applyDolly()
         }
     }
@@ -304,6 +324,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             }
             // A look picked during the take may want the other color space.
             self?.applyLogVideo()
+            self?.applyDolly()
+            self?.returnDollyZoom()
             guard let active else {
                 DispatchQueue.main.async { completion(nil) }
                 return
@@ -721,6 +743,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         applyCaptureExtras()
         applyLogVideo()
         applyProRAW()
+        presetDolly()
         applyDolly()
         PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
     }

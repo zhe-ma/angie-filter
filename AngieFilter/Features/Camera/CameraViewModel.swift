@@ -99,6 +99,9 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var liveWanted = UserDefaults.standard.bool(forKey: CameraViewModel.liveKey)
     /// 希区柯克变焦, offered in single-camera video mode. Not kept across launches.
     @Published private(set) var dollyOn = false
+    @Published private(set) var dollyDirection = DollyDirection.away
+    /// The direction picker, in place of the focal ring.
+    @Published private(set) var dollyOpen = false
     @Published private(set) var beautyOn = UserDefaults.standard.bool(forKey: CameraViewModel.beautyKey)
     /// Kept while 美颜 is off, so turning it back on returns to the same strength.
     @Published private(set) var beautyAmount = UserDefaults.standard.object(forKey: CameraViewModel.beautyAmountKey) as? Float
@@ -453,6 +456,7 @@ final class CameraViewModel: ObservableObject {
     func toggleFilters() {
         frameOpen = false
         beautyOpen = false
+        dollyOpen = false
         filtersOpen.toggle()
         if filtersOpen {
             familyID = LookLibrary.family(containing: lookID).id
@@ -476,12 +480,14 @@ final class CameraViewModel: ObservableObject {
         }
         if filtersOpen { closeFilters() }
         beautyOpen = false
+        dollyOpen = false
         frameOpen = true
     }
 
     func dismissPanels() {
         frameOpen = false
         beautyOpen = false
+        dollyOpen = false
         closeFilters()
     }
 
@@ -553,7 +559,7 @@ final class CameraViewModel: ObservableObject {
         let dy = current.y - start.y
         if dx * dx + dy * dy > 64 { return }
         // In dual mode a tap on a pane picks which camera the open filter panel edits.
-        if frameOpen || beautyOpen || (filtersOpen && !dualOn) {
+        if frameOpen || beautyOpen || dollyOpen || (filtersOpen && !dualOn) {
             dismissPanels()
         }
         let photo = photoRect(in: viewSize)
@@ -643,13 +649,32 @@ final class CameraViewModel: ObservableObject {
         mode == .video && !dualOn
     }
 
-    /// The zoom follows the distance to the face, so it keeps its size while the phone moves. A take, a zoom stop,
-    /// or a pinch starts over from the size then. Walking toward the face needs a longer focal length to zoom out from.
-    func toggleDolly() {
-        guard dollyAvailable else { return }
-        dollyOn.toggle()
-        session.setDollyZoom(dollyOn)
-        flashBanner(dollyOn ? "希区柯克：前后走，人物大小不变" : "希区柯克已关闭")
+    /// During a take the zoom follows the distance to the face, so it keeps its size while the phone moves, and only
+    /// goes the way the picked walk does. A zoom stop or a pinch mid-take starts over from the size then.
+    /// Off: turns it on and shows the direction picker. On: shows or hides the picker.
+    func tapDolly() {
+        guard dollyAvailable, !isRecording else { return }
+        guard dollyOn else {
+            setDollyOn(true)
+            dollyOpen = true
+            return
+        }
+        dollyOpen.toggle()
+    }
+
+    func setDollyOn(_ on: Bool) {
+        guard dollyAvailable, !isRecording, dollyOn != on else { return }
+        dollyOn = on
+        session.setDollyZoom(on, direction: dollyDirection)
+        flashBanner(on ? dollyDirection.hint : "希区柯克已关闭")
+    }
+
+    /// Moves the zoom to where that walk starts.
+    func setDollyDirection(_ direction: DollyDirection) {
+        guard dollyOn, !isRecording, dollyDirection != direction else { return }
+        dollyDirection = direction
+        session.setDollyZoom(true, direction: direction)
+        flashBanner(direction.hint)
     }
 
     func toggleFrameRate() {
@@ -665,6 +690,7 @@ final class CameraViewModel: ObservableObject {
     private func startRecording() {
         guard !isRecording else { return }
         frameOpen = false
+        dollyOpen = false
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("video-\(UUID().uuidString).mov")
         if dualOn {
             dualSession.startRecording(to: url)

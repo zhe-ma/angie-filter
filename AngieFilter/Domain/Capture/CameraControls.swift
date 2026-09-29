@@ -94,6 +94,23 @@ enum VideoFrameRate: Int, Sendable {
     var next: VideoFrameRate { self == .thirty ? .twentyFour : .thirty }
 }
 
+/// Which way the phone moves during a 希区柯克 take. The zoom starts where the move has room and only goes one way.
+enum DollyDirection: String, CaseIterable, Identifiable, Sendable {
+    /// Away from the face: starts at the lens's widest and zooms in.
+    case away = "向后走"
+    /// Toward the face: starts zoomed in and zooms out.
+    case toward = "向前走"
+
+    var id: Self { self }
+
+    var hint: String {
+        switch self {
+        case .away: "向后走：从最广开始录，往后退时拉近"
+        case .toward: "向前走：从长焦开始录，往前走时拉远"
+        }
+    }
+}
+
 struct CameraStatus: Equatable, Sendable {
     var authorization: CameraAuthorization = .unknown
     var isRunning = false
