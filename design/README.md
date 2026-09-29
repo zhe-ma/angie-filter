@@ -18,6 +18,7 @@ AngieFilter 是一台 iOS 滤镜相机：拍摄时把风格套在预览上，按
 | [multicam.md](multicam.md) | 双摄：上下、左右、画中画、圆窗、叠加 |
 | [competitor-effects.md](competitor-effects.md) | 竞品逆向调研：哪些效果能用、难度、实验室分类的来源和数值 |
 | [product.md](product.md) | 产品范围、不做的事、滤镜目录、交互、验收场景 |
+| [handoff.md](handoff.md) | 交接：运镜现状、竞品运镜调研、接下来的开发计划、已知问题 |
 
 工程在 `AngieFilter/`，一个应用目标，最低 iOS 18，只做 iPhone，界面锁竖屏。Bundle ID 是 `com.zhe.AngieFilter`。
 
