@@ -28,6 +28,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let modelName = PhoneModelName.marketingName(for: DeviceMachine.identifier)
     private let shutterDate = Locked("")
     private let shutterPlace = Locked("")
+    private let shutterHold = Locked(HoldOrientation.portrait)
 
     override init() {
         guard let metalDevice = MTLCreateSystemDefaultDevice() else {
@@ -121,8 +122,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     func capturePhoto() {
         let day = FrameDateText.string(from: Date())
         let place = parameters.with { $0.framePlace }
+        let hold = parameters.with { $0.hold }
         shutterDate.with { $0 = day }
         shutterPlace.with { $0 = place }
+        shutterHold.with { $0 = hold }
         sessionQueue.async { [weak self] in
             guard let self, self.isConfigured else { return }
             let settings = AVCapturePhotoSettings()
@@ -175,9 +178,11 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         renderParameters.mirrorHorizontally = captureFacing.with { $0 } == .front
         renderParameters.frameDate = shutterDate.with { $0 }
         renderParameters.framePlace = shutterPlace.with { $0 }
+        renderParameters.hold = shutterHold.with { $0 }
         let source = FrameImageMaker.sourceImage(from: photoImage, parameters: renderParameters)
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
-        let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: true)
+        let turned = FrameImageMaker.turned(graded, hold: renderParameters.hold)
+        let framed = framedImage(turned, parameters: renderParameters, synchronousCaption: true)
         guard let image = previewView.makeImage(framed) else {
             publishFailure("照片处理失败")
             return
@@ -267,6 +272,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         parameters.with { $0.orientation = Self.orientation(for: facing) }
         session.commitConfiguration()
         publishStatus()
+        PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
     }
 
     private func configure(facing: CameraFacing) {
@@ -301,6 +307,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         parameters.with { $0.orientation = Self.orientation(for: facing) }
         session.commitConfiguration()
         isConfigured = true
+        PerfLog.line("single: format \(CaptureFormatLog.describe(camera.activeFormat, on: camera))")
     }
 
     private func applyInitialZoom(on device: AVCaptureDevice) {

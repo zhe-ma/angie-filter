@@ -39,6 +39,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `CameraAuthorization` | 相机权限状态 |
 | `ZoomStop` | 变焦条上的一档，带等效焦段 |
 | `CameraStatus` | 界面看到的朝向、变焦、闪光灯、权限 |
+| `HoldOrientation` | 手机怎么拿：竖、上端朝右、上端朝左、倒。成片按它转正，图标按它转向 |
 | `Look` | 一款滤镜。界面文案叫滤镜 |
 | `GrainPlateKind` | 无颗粒、细板、粗板 |
 | `LookFinish` | 目录里的褪色、光晕、颗粒、暗角 |
@@ -73,6 +74,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `PhotoOrientation` | 照片连接设成竖拍、不镜像，读图时按 EXIF 转正 |
 | `ZoomLadderBuilder` | 从当前设备读出实体镜头档和推荐焦段，换算等效焦段 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色 |
+| `CaptureFormatLog` | 把当前格式的尺寸、像素格式、binning、HDR、帧率和色彩空间写成一行日志 |
 | `GradeApplicator` | 颜色、收尾，再按强度溶回原图 |
 | `ColorGrader` | LUT 走 `CIColorCubeWithColorSpace`（sRGB），内置款调用 Core Image 滤镜，实验室交给 `EffectChain` |
 | `EffectChain` | 实验室 22 款的处理链，来源和数值见 [competitor-effects.md](competitor-effects.md) |
@@ -98,7 +100,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | 类型 | 作用 |
 | --- | --- |
 | `CameraView` | 取景区（只有画面和辅助线）、固定高度的控制台（焦段环加工具托盘 / 滤镜 / 相框）、快门行。`CameraPalette` 也在这里，确认页共用 |
-| `GridOverlay`、`LevelIndicator`、`LevelMonitor` | 三分网格线和水平仪。`LevelMonitor` 用 Core Motion 的重力读竖屏横滚角，只有水平仪观察它 |
+| `GridOverlay`、`LevelIndicator`、`LevelMonitor`、`MotionHub` | 三分网格线和水平仪。`MotionHub` 是唯一的 Core Motion 来源，算出拿法交给 `CameraViewModel`，横滚偏差交给 `LevelMonitor`，只有水平仪观察它 |
 | `CameraViewModel` | 主线程状态。相框、滤镜调节和双摄的两套滤镜都只留在这次启动的内存里 |
 | `PlaceReader` | 使用期间的位置，逆地理成城市和区。关掉地点就停止 |
 | `FilterStripView` | 滤镜分类和缩略图，只观察 `ThumbnailStore` |

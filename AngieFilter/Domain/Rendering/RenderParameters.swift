@@ -33,6 +33,8 @@ struct RenderParameters: Equatable, Sendable {
     var framePlace = ""
     var orientation: CGImagePropertyOrientation = .right
     var mirrorHorizontally = false
+    /// Stills are turned to this after grading and before the frame. The preview ignores it.
+    var hold: HoldOrientation = .portrait
     var quality: RenderQuality = .preview
     /// Set while both cameras are composited. Nil on the single-camera path.
     var dual: DualSettings?

@@ -2,7 +2,8 @@ import CoreImage
 import CoreGraphics
 
 enum DualFrameComposer {
-    static let previewLongEdge: CGFloat = 1280
+    /// Same long edge as the single-camera preview.
+    static let previewLongEdge: CGFloat = 1920
 
     static func previewCanvas(widthOverHeight: CGFloat) -> CGSize {
         canvasSize(widthOverHeight: widthOverHeight, longEdge: previewLongEdge)

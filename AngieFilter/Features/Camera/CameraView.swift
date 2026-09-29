@@ -192,6 +192,7 @@ struct CameraView: View {
                     Text(isActive ? "\(Int(focal.rounded()))mm" : stop.title)
                         .font(.system(size: 12, weight: isActive ? .semibold : .medium).monospacedDigit())
                         .foregroundStyle(isActive ? CameraPalette.accent : Color.white.opacity(0.8))
+                        .upright(model.iconAngle)
                         .frame(minWidth: isActive ? 50 : 38, minHeight: 34)
                         .background(isActive ? CameraPalette.raised : Color.clear, in: Capsule())
                         .contentShape(Capsule())
@@ -222,6 +223,7 @@ struct CameraView: View {
                 Text(model.aspectRatio.rawValue)
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
+                    .upright(model.iconAngle)
                     .frame(width: 52, height: 44)
                     .contentShape(Rectangle())
             }
@@ -242,6 +244,7 @@ struct CameraView: View {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(on ? CameraPalette.accent : Color.white)
+                .upright(model.iconAngle)
                 .frame(width: 50, height: 44)
                 .contentShape(Rectangle())
         }
@@ -538,6 +541,7 @@ struct CameraView: View {
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(open ? Color.black : applied ? CameraPalette.accent : Color.white)
+                .upright(model.iconAngle)
                 .frame(width: 50, height: 50)
                 .background(open ? Color.white : CameraPalette.tray, in: Circle())
         }
@@ -655,6 +659,14 @@ private enum AdjustKey: CaseIterable, Identifiable {
         case .grain: adjustment.grain = value
         case .vignette: adjustment.vignette = value
         }
+    }
+}
+
+private extension View {
+    /// Turns a glyph in place to read upright however the phone is held. The layout stays portrait.
+    func upright(_ angle: Double) -> some View {
+        rotationEffect(.radians(angle))
+            .animation(.easeInOut(duration: 0.3), value: angle)
     }
 }
 

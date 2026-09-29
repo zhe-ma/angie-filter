@@ -41,6 +41,20 @@ enum FrameImageMaker {
         return upright
     }
 
+    /// Turns a portrait-upright still so the world's up is up for how the phone was held.
+    /// A mirrored selfie turns the same way as the back camera: its preview stays a true mirror
+    /// at any angle, so the still only has to undo the phone's rotation.
+    static func turned(_ image: CIImage, hold: HoldOrientation) -> CIImage {
+        let orientation: CGImagePropertyOrientation
+        switch hold {
+        case .portrait: return image
+        case .landscapeRight: orientation = .right
+        case .landscapeLeft: orientation = .left
+        case .upsideDown: orientation = .down
+        }
+        return shiftedToOrigin(image.oriented(orientation))
+    }
+
     static func scaledForPreview(_ image: CIImage) -> CIImage {
         let extent = image.extent
         let longEdge = max(extent.width, extent.height)

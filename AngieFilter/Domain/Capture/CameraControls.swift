@@ -17,6 +17,48 @@ enum FlashMode: String, CaseIterable, Sendable {
     }
 }
 
+/// How the phone is held. The interface stays portrait; icons and saved photos follow this.
+enum HoldOrientation: Equatable, Sendable {
+    case portrait
+    /// Top of the phone points right.
+    case landscapeRight
+    /// Top of the phone points left.
+    case landscapeLeft
+    case upsideDown
+
+    /// Device roll in radians, positive when the top leans right. Matches `atan2(gravity.x, -gravity.y)`.
+    var angle: Double {
+        switch self {
+        case .portrait: return 0
+        case .landscapeRight: return .pi / 2
+        case .landscapeLeft: return -.pi / 2
+        case .upsideDown: return .pi
+        }
+    }
+
+    var isLandscape: Bool {
+        self == .landscapeRight || self == .landscapeLeft
+    }
+
+    static func nearest(to angle: Double) -> HoldOrientation {
+        let all: [HoldOrientation] = [.portrait, .landscapeRight, .landscapeLeft, .upsideDown]
+        return all.min { distance($0.angle, angle) < distance($1.angle, angle) } ?? .portrait
+    }
+
+    /// Smallest absolute difference between two angles, in radians.
+    static func distance(_ a: Double, _ b: Double) -> Double {
+        abs(normalized(a - b))
+    }
+
+    /// Wraps into (-π, π].
+    static func normalized(_ angle: Double) -> Double {
+        var value = angle.truncatingRemainder(dividingBy: 2 * .pi)
+        if value > .pi { value -= 2 * .pi }
+        if value <= -.pi { value += 2 * .pi }
+        return value
+    }
+}
+
 enum CameraAuthorization: Sendable {
     case unknown
     case authorized

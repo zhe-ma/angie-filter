@@ -84,6 +84,9 @@ final class CameraViewModel: ObservableObject {
     let thumbnails = ThumbnailStore()
     @Published var banner: String?
     @Published var showZoomReadout = false
+    /// Radians the controls' glyphs turn so they read upright. Accumulates, so every turn takes the short way.
+    @Published private(set) var iconAngle: Double = 0
+    private var hold = HoldOrientation.portrait
 
     let looks = LookLibrary.looks
     let session = CameraSessionController()
@@ -165,6 +168,10 @@ final class CameraViewModel: ObservableObject {
             self.placeMissing = self.frame.showsPlace && self.frame.allowsCaption
             self.syncParameters()
         }
+        MotionHub.shared.onHold = { [weak self] hold in
+            self?.holdChanged(hold)
+        }
+        MotionHub.shared.start()
         syncParameters()
         MainThreadWatch.start()
         session.start()
@@ -607,7 +614,15 @@ final class CameraViewModel: ObservableObject {
         return savedAdjustments[look.id] ?? .baseline(for: look)
     }
 
+    private func holdChanged(_ next: HoldOrientation) {
+        guard next != hold else { return }
+        hold = next
+        iconAngle += HoldOrientation.normalized(-next.angle - iconAngle)
+        syncParameters()
+    }
+
     private func syncParameters() {
+        let hold = hold
         if dualOn {
             let settings = currentDualSettings()
             let aspect = aspectRatio
@@ -619,6 +634,7 @@ final class CameraViewModel: ObservableObject {
                 parameters.frame = framed
                 parameters.frameDate = date
                 parameters.framePlace = place
+                parameters.hold = hold
                 parameters.dual = settings
             }
         } else {
@@ -632,6 +648,7 @@ final class CameraViewModel: ObservableObject {
                 parameters.frame = frame
                 parameters.frameDate = previewDate
                 parameters.framePlace = placeText
+                parameters.hold = hold
                 parameters.dual = nil
             }
         }

@@ -309,7 +309,8 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         let gradedBack = grade(back, facing: .back, parameters: capture.parameters, settings: settings)
         let gradedFront = grade(front, facing: .front, parameters: capture.parameters, settings: settings)
         let composed = DualFrameComposer.compose(back: gradedBack, front: gradedFront, settings: settings, canvas: canvas)
-        let framed = framedImage(composed, parameters: capture.parameters, synchronousCaption: true)
+        let turned = FrameImageMaker.turned(composed, hold: capture.parameters.hold)
+        let framed = framedImage(turned, parameters: capture.parameters, synchronousCaption: true)
         guard let image = makeStill(framed) else {
             publishFailure("照片处理失败")
             return
@@ -473,6 +474,8 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
                 width, added ? "yes" : "no", session.hardwareCost, session.systemPressureCost
             ))
             if added, session.hardwareCost <= 1, session.systemPressureCost <= 1 {
+                PerfLog.line("dual: back format \(CaptureFormatLog.describe(pair.back.activeFormat, on: pair.back))")
+                PerfLog.line("dual: front format \(CaptureFormatLog.describe(pair.front.activeFormat, on: pair.front))")
                 backDevice = pair.back
                 frontDevice = pair.front
                 applyInitialZoom(on: pair.back)
@@ -499,9 +502,16 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         do {
             try device.lockForConfiguration()
             device.activeFormat = format
-            let frameDuration = CMTime(value: 1, timescale: 30)
-            device.activeVideoMinFrameDuration = frameDuration
-            device.activeVideoMaxFrameDuration = frameDuration
+            // Match the single-camera photo preset: 8-bit Display P3, up to 30fps, free to slow to 15 in low light,
+            // and no video HDR. Left automatic, a 10-bit format switches to HLG and the frames look overexposed.
+            device.activeColorSpace = format.supportedColorSpaces.contains(.P3_D65) ? .P3_D65 : .sRGB
+            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
+            let slowest = format.videoSupportedFrameRateRanges.map(\.minFrameRate).min() ?? 30
+            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: CMTimeScale(max(15, slowest.rounded(.up))))
+            if format.isVideoHDRSupported {
+                device.automaticallyAdjustsVideoHDREnabled = false
+                device.isVideoHDREnabled = false
+            }
             device.unlockForConfiguration()
         } catch {
             return fail("lock")
@@ -528,6 +538,9 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         session.addConnection(photoConnection)
         PhotoOrientation.preparePortrait(photoConnection)
         photo.maxPhotoQualityPrioritization = .quality
+        if let largest = format.supportedMaxPhotoDimensions.max(by: { $0.width * $0.height < $1.width * $1.height }) {
+            photo.maxPhotoDimensions = largest
+        }
         return true
     }
 
@@ -558,6 +571,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         facing: CameraFacing
     ) {
         let settings = AVCapturePhotoSettings()
+        settings.maxPhotoDimensions = output.maxPhotoDimensions
         shotLanes.with { $0[settings.uniqueID] = ShotLane(generation: generation, facing: facing) }
         if output.supportedFlashModes.contains(flash) {
             settings.flashMode = flash
@@ -665,12 +679,20 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
             let width = CMVideoFormatDescriptionGetDimensions(format.formatDescription).width
             return width <= maxWidth && width >= 640
         }
-        return matches.max { lhs, rhs in
-            let left = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
-            let right = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
-            if left.width != right.width { return left.width < right.width }
-            return left.height < right.height
-        }
+        return matches.max { rank($0) < rank($1) }
+    }
+
+    /// Closest to the single-camera preview first: 8-bit like the photo formats, the sensor's own 4:3
+    /// so a 3:4 crop loses nothing, a full readout over a binned one, full range, then the largest.
+    private static func rank(_ format: AVCaptureDevice.Format) -> (Int, Int, Int, Int, Int32, Int32) {
+        let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        let subtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+        let fullRange = subtype == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ? 1 : 0
+        let eightBit = fullRange == 1 || subtype == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ? 1 : 0
+        let ratio = Double(size.width) / Double(max(size.height, 1))
+        let fourThree = abs(ratio - 4.0 / 3.0) < 0.01 ? 1 : 0
+        let fullReadout = format.isVideoBinned ? 0 : 1
+        return (eightBit, fourThree, fullReadout, fullRange, size.width, size.height)
     }
 }
 
