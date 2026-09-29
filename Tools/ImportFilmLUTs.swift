@@ -223,6 +223,46 @@ let fujiPackages: [FujiPackage] = [
     FujiPackage(id: "x100vi", model: "X100VI", simulations: ["eterna", "eternabb"]),
 ]
 
+/// StormCam's standard and Log looks. Their PNGs come from Tools/ImportStormCamLUTs.swift.
+struct StormLook {
+    let id: String
+    let name: String
+    let about: String
+    var log = false
+    var strength: Float = 1
+}
+
+/// Keep in sync with `looks` in Tools/ImportStormCamLUTs.swift and the `stormcam` family in LookLibrary.
+let stormLooks: [StormLook] = [
+    StormLook(id: "losangeles", name: "洛杉矶", about: "高光偏黄绿，暗部微青，白位压低。"),
+    StormLook(id: "lapland", name: "拉普兰", about: "整体偏冷蓝，饱和降低。"),
+    StormLook(id: "bali", name: "巴厘岛", about: "黑位抬起的哑光，中间调偏青绿。"),
+    StormLook(id: "milan", name: "米兰", about: "中间调提亮，暗部略暖，色彩保留得多。"),
+    StormLook(id: "oslo", name: "奥斯陆", about: "偏暗、低饱和，中间调偏青。"),
+    StormLook(id: "seville", name: "塞维利亚", about: "暖红调，高光偏暖。"),
+    StormLook(id: "reykjavik", name: "雷克雅维克", about: "明亮偏冷，饱和降低。"),
+    StormLook(id: "queensland", name: "昆士兰", about: "近中性，低反差，暗部抬起。"),
+    StormLook(id: "prague", name: "布拉格", about: "中性，饱和略降。"),
+    StormLook(id: "lasvegas", name: "拉斯维加斯", about: "中间调偏暖，黑位偏青，高光偏黄。"),
+    StormLook(id: "cannes", name: "戛纳", about: "黑白，黑位和白位都拉满。"),
+    StormLook(id: "restore", name: "还原", about: "Apple Log 到 Rec.709 的标准还原，饱和和反差比原图高。", log: true),
+    StormLook(id: "natural", name: "自然", about: "更柔的还原，高光偏冷。", log: true),
+    StormLook(id: "seoul", name: "首尔", about: "明亮，暗部偏青，高光容易到顶。", log: true),
+    StormLook(id: "island", name: "海岛", about: "低饱和，暗部压深。", log: true),
+    StormLook(id: "kamakura", name: "镰仓", about: "灰调哑光，白位压低，高光偏青。", log: true),
+    StormLook(id: "manhattan", name: "曼哈顿", about: "中性偏暗，反差适中。", log: true),
+    StormLook(id: "tuscany", name: "托斯卡纳", about: "暖黄，高光偏黄。", log: true),
+    StormLook(id: "shangrila", name: "香格里拉", about: "近中性，暗部偏暖。", log: true),
+    StormLook(id: "monochrome", name: "黑白", about: "偏亮的黑白。", log: true),
+    StormLook(id: "modern", name: "摩登", about: "暗部更深的高反差黑白。", log: true),
+    StormLook(id: "rome", name: "罗马", about: "中间调偏绿，暗部略抬。", log: true),
+    StormLook(id: "gobi", name: "戈壁", about: "低饱和偏暖，高光容易到顶。", log: true),
+    StormLook(id: "london", name: "伦敦", about: "低饱和偏暗，暗部偏蓝，高光偏黄。", log: true),
+    StormLook(id: "istanbul", name: "伊斯坦布尔", about: "明亮，暗部偏青绿，白位略压。", log: true),
+    StormLook(id: "sydney", name: "悉尼", about: "中间调和高光偏绿，白位压低。", log: true),
+    StormLook(id: "kiruna", name: "基律纳", about: "偏暗偏青，高光偏青绿。", log: true),
+]
+
 // MARK: - HaldCLUT
 
 struct ImportError: Error, CustomStringConvertible {
@@ -448,6 +488,9 @@ func catalogJSON() -> String {
             let key = "\(package.id)-\(simulation.id)"
             lines.append("  {\"id\": \(quoted("fx-\(key)")), \"name\": \(quoted(simulation.name)), \"about\": \(quoted("\(package.model) 的 LUT。\(simulation.about)")), \"grade\": \"lut\", \"lut\": \(quoted("fuji-\(key)")), \"strength\": \(number(simulation.strength))}")
         }
+    }
+    for look in stormLooks {
+        lines.append("  {\"id\": \(quoted("storm-\(look.id)")), \"name\": \(quoted(look.name)), \"about\": \(quoted("StormCam \(look.log ? "Log " : "标准")影调。\(look.about)")), \"grade\": \"lut\", \"lut\": \(quoted("storm-\(look.id)")), \"strength\": \(number(look.strength))}")
     }
     return "[\n" + lines.joined(separator: ",\n") + "\n]\n"
 }

@@ -56,6 +56,8 @@ flowchart LR
 | RawTherapee Film Simulation Collection 2015-09-20（Pat David、Pavlov Dmitry、Michael Ezra） | 62 | CC BY-SA 4.0 | `Resources/FilmLUTs/film-<id>.png` |
 | Core Image 照片效果 | 8 | 系统自带 | 不占资源 |
 | 富士官方 F-Log2 3D-LUT，下载页每个系列一台机型 | 18 | 没有再分发许可，只用于本地构建 | `Resources/FujiLUTs/fuji-<机型>-<模拟>.png` |
+| StormCam 1.5.4 标准影调和 Log 影调，从应用内加密资源解出 | 27 | 没有授权 | `Resources/StormCamLUTs/storm-<id>.png` |
+| Halide 3.1.1 创意 Look 的 SDR `.ccube` | 6 | 没有授权 | `Resources/HalideLUTs/halide-<id>.png` |
 
 富士下载页按系列分组，每个系列取一台带 F-Log2 的新机型，一个系列是一个分类：
 
@@ -81,6 +83,29 @@ swiftc -O Tools/ImportFujiLUTs.swift -o /tmp/import-fuji
 ```
 
 机型和模拟的名称、说明、默认强度写在 `Tools/ImportFilmLUTs.swift` 的 `fujiPackages` 和 `fujiSimulations`，由它写进 `Looks.json`。分组在 `LookLibrary.familySpecs`。
+
+StormCam 有三族影调：标准（sRGB 进、SDR 出）11 款，Log 16 款，高亮（Log 进、HDR 出）7 款。接了标准和 Log 两族，高亮款要 HDR 输出，没接。标准款和我们一样在 sRGB 编码值上套 LUT，所以 `Tools/ImportStormCamLUTs.swift` 只把 33³ cube 三线性重采样成 64³，和原 cube 平均差 0.13/255，最大 2.9/255。Log 款的输入是 Apple Log（Rec.2020），输出是普通 SDR；成片先按和 Halide 相同的办法还原到场景光（显示白到场景 12，18% 灰不动），转 Rec.2020、Apple Log 编码，再查表，有 65³ 版本的用 65³。StormCam 自己的颗粒、柔光等效果预设没有接，这里的 StormCam 款只有颜色，收尾走我们的 `FilmFinish`。名称和说明写在 `Tools/ImportFilmLUTs.swift` 的 `stormLooks`。
+
+```bash
+swiftc -O Tools/ImportStormCamLUTs.swift -o /tmp/import-stormcam
+/tmp/import-stormcam /Users/zhe/Desktop/reverse/stormcam/reverse/decrypted/demo/luts
+```
+
+Halide 的 `.ccube` 是 LZFSE 压缩的 33³ Float16 表，输入是场景线性的 Apple Log，输出是 Display P3 gamma 2.2（Chroma Noir 是 Rec.2020 PQ）。成片不能直接喂：成片的白已经被压到 1，落在场景 1.0 上，Halide 把它渲成 0.8 左右的灰。`Tools/ImportHalideLUTs.swift` 对每个格点依次做：
+
+1. sRGB 解码成线性。
+2. 按最大通道做反向的扩展 Reinhard，显示白还原到场景 12，18% 灰保持 18%。
+3. 转到 Look 的输入色域：Valencia、Rembrandt、Nova、Zephyr、Scarlet 是 Apple Log 2 的 Apple Wide Gamut（原色取 OpenColorIO ACES 配置），Chroma Noir 是 Apple Log 的 Rec.2020。
+4. Apple Log 编码（Apple Log 2 同一条曲线），查 Halide 的表。
+5. 输出按 gamma 2.2 或 PQ 解码，PQ 的 100 nit 当作白；再转回 sRGB，超出 sRGB 的颜色截断。
+
+Halide 的表本身暗部压得很深，场景 0.02 只出 0.06。iPhone 成片的暗部被本地色调映射提亮过，套上后阴影比原图重得多，这是这组 Look 的主要观感。场景白 12 是这里定的，上机觉得高光发灰就调大，觉得过曝就调小。
+
+```bash
+mkdir -p /tmp/halide && unzip -q /Users/zhe/Desktop/reverse/halide/com.chromanoir.Zeit_3.1.1_und3fined.ipa '*.ccube' -d /tmp/halide/ipa
+swiftc -O Tools/ImportHalideLUTs.swift -o /tmp/import-halide
+/tmp/import-halide /tmp/halide/ipa/Payload/Halide.app/Frameworks/HalideCamera.framework
+```
 
 胶片 LUT 的署名和改动说明在 `Resources/FilmLUTs/FilmSimulation-LICENSE.txt`，跟着应用一起打包。CC BY-SA 要求署名、给出许可链接、注明改动，改过的 LUT 仍按 CC BY-SA 发布。以后上架时，应用里要有一处能看到这段署名。
 

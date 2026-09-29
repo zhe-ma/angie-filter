@@ -41,7 +41,7 @@ enum EffectChain {
             return softFocus(GradeApplicator.mix(image, lut(image), amount: 0.649), sigmaAt1080: 1.7, amount: 0.303)
         case .kapiFino:
             return softFocus(lut(image), sigmaAt1080: 1.24, amount: 0.46)
-        case .halideValencia:
+        case .halideValencia, .halideRembrandt, .halideZephyr:
             return lut(halideFilm(image, gains: (0.2, 0.1, 0.05), halationRadius: 1, mtfFrequency: 0.5))
         case .halideNova:
             return lut(halideFilm(image, gains: (0.6, 0.3, 0.1), halationRadius: 1, mtfFrequency: 0.5))

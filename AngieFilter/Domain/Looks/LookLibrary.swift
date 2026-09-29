@@ -50,6 +50,8 @@ enum LookLibrary {
         ("fx-gfx100rf", "GFX 固定镜头", ["fx-gfx100rf-eterna", "fx-gfx100rf-eternabb"]),
         ("fx-xt30iii", "X 无反", ["fx-xt30iii-eterna", "fx-xt30iii-eternabb"]),
         ("fx-x100vi", "X 固定镜头", ["fx-x100vi-eterna", "fx-x100vi-eternabb"]),
+        ("stormcam", "StormCam", ["storm-losangeles", "storm-lapland", "storm-bali", "storm-milan", "storm-oslo", "storm-seville", "storm-reykjavik", "storm-queensland", "storm-prague", "storm-lasvegas", "storm-cannes", "storm-restore", "storm-natural", "storm-seoul", "storm-island", "storm-kamakura", "storm-manhattan", "storm-tuscany", "storm-shangrila", "storm-monochrome", "storm-modern", "storm-rome", "storm-gobi", "storm-london", "storm-istanbul", "storm-sydney", "storm-kiruna"]),
+        ("halide", "Halide", ["halide-valencia", "halide-rembrandt", "halide-nova", "halide-zephyr", "halide-chromanoir", "halide-scarlet"]),
         ("instant", "拍立得", ["fp100c", "polaroid669", "polaroid669cold", "polaroid690", "px70", "px680", "px100warm", "timezero", "polachrome", "polaroid665"]),
         ("mono", "黑白", ["hp5", "delta100", "delta3200", "fp4", "panf50", "xp2", "apx100", "retro100", "ortho25", "infrared"]),
         ("agfa", "爱克发", ["vista200", "precisa100", "ultra100", "xproslide", "redscale", "elitexpro"]),

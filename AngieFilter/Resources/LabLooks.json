@@ -20,5 +20,11 @@
   {"id": "lab-expired", "name": "过期", "about": "Mood Expired：对比 0.9，褪色 0.23，配 800 颗粒。", "grade": "effect", "effect": "mood-expired", "lut": "film-elite200", "fade": 0.46, "grain": 0.5, "grainPlate": "coarse"},
   {"id": "lab-analog", "name": "胶片 +1/3", "about": "NOMO RAW Analog：+0.33 EV，颗粒 0.5，暗角 0.3。", "grade": "effect", "effect": "nomo-analog", "lut": "film-portra400", "grain": 0.5, "grainPlate": "coarse", "vignette": 0.3},
   {"id": "lab-hardbw", "name": "硬黑白", "about": "NOMO RAW GR III Hard-BW：颗粒 1，暗角 0.3。", "grade": "effect", "effect": "nomo-hardbw", "grain": 1, "grainPlate": "coarse", "vignette": 0.3},
-  {"id": "lab-bloom", "name": "泛光", "about": "No Fusion：LUT 之前的 CIBloom，半径 10。", "grade": "effect", "effect": "nofusion-bloom", "lut": "film-portra800"}
+  {"id": "lab-bloom", "name": "泛光", "about": "No Fusion：LUT 之前的 CIBloom，半径 10。", "grade": "effect", "effect": "nofusion-bloom", "lut": "film-portra800"},
+  {"id": "halide-valencia", "name": "Valencia", "about": "Halide 原版 LUT。MTF 频率 0.5，光晕增益 (0.2, 0.1, 0.05)。", "grade": "effect", "effect": "halide-valencia", "lut": "halide-valencia", "grain": 0.5, "vignette": 0.57},
+  {"id": "halide-rembrandt", "name": "Rembrandt", "about": "Halide 原版 LUT。MTF 频率 0.5，光晕增益 (0.2, 0.1, 0.05)。", "grade": "effect", "effect": "halide-rembrandt", "lut": "halide-rembrandt", "grain": 0.4, "vignette": 0.57},
+  {"id": "halide-nova", "name": "Nova", "about": "Halide 原版 LUT。MTF 频率 0.5，光晕增益 (0.6, 0.3, 0.1)。", "grade": "effect", "effect": "halide-nova", "lut": "halide-nova", "grain": 0.4, "vignette": 0.57},
+  {"id": "halide-zephyr", "name": "Zephyr", "about": "Halide 原版 LUT。MTF 频率 0.5，光晕增益 (0.2, 0.1, 0.05)。", "grade": "effect", "effect": "halide-zephyr", "lut": "halide-zephyr", "grain": 0.5, "vignette": 0.57},
+  {"id": "halide-chromanoir", "name": "Chroma Noir", "about": "Halide 原版 LUT，黑白。MTF 频率 0.5，光晕增益 (0.2, 0.2, 0.2)。", "grade": "effect", "effect": "halide-noir", "lut": "halide-chromanoir", "grain": 0.6, "vignette": 0.57},
+  {"id": "halide-scarlet", "name": "Scarlet", "about": "Halide 原版 LUT。MTF 频率 1.5，光晕半径 7，增益 (0.25, 0.1, 0.05)。", "grade": "effect", "effect": "halide-scarlet", "lut": "halide-scarlet", "grain": 0.4, "vignette": 0.57}
 ]

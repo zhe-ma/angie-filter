@@ -120,7 +120,7 @@ flowchart TB
 | 方案 | 资源 | 目录 |
 | --- | --- | --- |
 | `none` | 无 | 原图 |
-| `lut` | `FilmLUTs/film-<id>.png` 或 `FujiLUTs/fuji-<机型>-<模拟>.png` | `Looks.json`（由导入脚本写） |
+| `lut` | `FilmLUTs/film-<id>.png`、`FujiLUTs/fuji-<机型>-<模拟>.png` 、`StormCamLUTs/storm-<id>.png` 或 `HalideLUTs/halide-<id>.png` | `Looks.json`（由导入脚本写） |
 | `builtIn` | 无 | `Looks.json` |
 | `effect` | 可选的 `FilmLUTs` 底色，kernel 在 `default.metallib` | `LabLooks.json`，手工编辑 |
 

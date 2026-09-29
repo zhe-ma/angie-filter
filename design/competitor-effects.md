@@ -9,7 +9,7 @@
 
 Mood、NOMO RAW、No Fusion 给了数值，但着色器方程没有恢复。这 7 家的 22 个做法已经做成「实验室」分类，先上机看效果，再决定哪些转正。
 
-所有竞品的 LUT、颗粒图、漏光图、相框和遮罩都是专有资源，不能打包。能拿来的只有报告里的公式、参数和处理顺序。实验室里需要颜色的款，用我们自己的开源胶片 LUT 顶替对方的 LUT。
+实验室只用了报告里的公式、参数和处理顺序，需要颜色的款用我们自己的开源胶片 LUT 做底色。竞品资源里直接接入了两组 LUT：StormCam 的 11 款标准影调和 16 款 Log 影调成「StormCam」分类；Halide 6 款创意 Look 的原版 `.ccube` 成「Halide」分类，锐度和光晕仍走下面实验室里的 Halide 链。换算方法见 [rendering.md](rendering.md)。
 
 报告都是静态分析（反编译、解包资源），基本没有真机成片对比。报告给了数值的，照抄；没给的，这里写明是我们定的，上机调。
 
@@ -26,7 +26,7 @@ Mood、NOMO RAW、No Fusion 给了数值，但着色器方程没有恢复。这 
 | NOMO RAW 3.0.14 | `nomoraw/docs/`、`nomoraw/reverse/reports/filter-catalog.tsv` | 21 个配方的曝光、颗粒、暗角 |
 | No Fusion 2.5.56 | `nofusion/docs/` §7.1 | 风格链顺序、CIBloom、日期水印、八段 HSL |
 | Snapseed 4.1.0 | `snapseed/docs/` | 16³ LUT 图集格式；各编辑工具的算法没有覆盖 |
-| StormCam 1.5.4 | `stormcam/docs/`、`stormcam/reverse/decrypted/demo/recipes/effects.json` | 6 种效果、12 组预设数值、Highlight HDR 合同 |
+| StormCam 1.5.4 | `stormcam/docs/`、`stormcam/reverse/decrypted/demo/` | 34 款解密 LUT（标准 11、Log 16、高亮 7）、6 种效果、12 组预设数值、Highlight HDR 合同 |
 | Kino 1.4.1 | `kino/docs/` | LUT 色彩管理、AutoMotion 曝光、监看工具 |
 | Final Cut Camera 2.2 | `final-cut-camera/docs/` | LUT 只用于监看，峰值对焦和斑马纹 |
 | Blackmagic 3.4.00 | `black-magic/docs/` | 一级调色在 LUT 之前，cube 解析 |
@@ -45,7 +45,8 @@ Indigo 目录里只有一个 IPA 指针，没有报告。
 | 已做 | 下一节的 22 款 | 成片上就能做，一串系统滤镜加几个小 kernel |
 | 容易，还没做 | StormCam 六种效果和 12 组预设；No Fusion 日期水印；Blackmagic 一级调色；Mood 反差档位的其余字段；Kino 场景到显示的 2.4 伽马 | 参数有了，方程要我们自己定，或只差界面 |
 | 中等 | No Fusion 八段 HSL；Mood 按色相的 chrome density、带三色渐变的漫射光晕；Dazz 灰尘精灵图；Dazz 反鱼眼；双重曝光（Dazz、Mood、FotorGear）；希区柯克变焦；快门震动 | 要自己写 kernel、要两张图，或者要逐帧跑 Vision |
-| 难或不适用 | Halide Process Zero、Lampa WDR、NOMO RAW 冲洗、Kino/FCC/Blackmagic 的 Log LUT、StormCam Highlight HDR、Mood 景深和增益图、Expert RAW 多帧 ND、星芒检测 | 要 RAW、Log、多帧、深度或 HDR 输出，或者关键算法没恢复 |
+| 已接 LUT | StormCam 11 款标准影调、16 款 Log 影调；Halide 6 款创意 Look | 标准款直接重采样；Log 输入的款先把成片还原到场景光再编码成 Apple Log |
+| 难或不适用 | Halide Process Zero、Lampa WDR、NOMO RAW 冲洗、Kino/FCC/Blackmagic 的 Log LUT、StormCam 高亮影调（HDR 输出）、Mood 景深和增益图、Expert RAW 多帧 ND、星芒检测 | 要 RAW、Log、多帧、深度或 HDR 输出，或者关键算法没恢复 |
 
 ## 实验室分类
 
@@ -64,7 +65,7 @@ Indigo 目录里只有一个 IPA 指针，没有报告。
 | LOMO | KAPI LOMO | 压暗层混 0.5 → 提亮层 0.32 → LUT → 五点高斯（权重 0.136, 0.228, 0.271…）混 0.5 | 两张遮罩图换成径向渐变；底色 X-Pro Slide |
 | 柔焦 | KAPI NN | LUT 0.649 → 模糊 1.70（基准宽 1080）→ 混 0.303 → 噪声 0.5 → 暗角 0.75 | 底色 Portra 160 |
 | 柔焦 35 | KAPI FiNO35 | LUT → 五点高斯 → 混 0.46 → 暗角 0.34 → 噪声 0.29 | 五点高斯折合 σ=1.24（按 1080 宽） |
-| 暖晕 / 亮晕 / 大晕 / 银晕 | Halide Valencia / Nova / Scarlet / Chroma Noir | 顺序 MTF → 光晕 → 颗粒 → LUT；MTF `low=G(x,频率)，结果=low+2·G(x−low,2)`，频率 0.5（Scarlet 1.5）；光晕在 0.25 倍尺寸上 trim、乘增益、σ=半径×0.25、放大后相加；增益 (0.2,0.1,0.05) / (0.6,0.3,0.1) / (0.25,0.1,0.05) 半径 7 / (0.2,0.2,0.2)；颗粒 0.5/0.4/0.4/0.6；暗角 0.2 | Halide 的 trim 阈值是线性 HDR 里的 1，SDR 成片到不了，这里用 0.75；光晕半径 1 折合宽度 0.4%；MTF 像素按 4032 宽换算；暗角 0.2 折成我们的 0.57；底色分别是 Portra 400、Ektar 100、Kodachrome 64、Acros 100 |
+| 暖晕 / 亮晕 / 大晕 / 银晕 | Halide Valencia / Nova / Scarlet / Chroma Noir | 顺序 MTF → 光晕 → 颗粒 → LUT；MTF `low=G(x,频率)，结果=low+2·G(x−low,2)`，频率 0.5（Scarlet 1.5）；光晕在 0.25 倍尺寸上 trim、乘增益、σ=半径×0.25、放大后相加；增益 (0.2,0.1,0.05) / (0.6,0.3,0.1) / (0.25,0.1,0.05) 半径 7 / (0.2,0.2,0.2)；颗粒 0.5/0.4/0.4/0.6；暗角 0.2 | Halide 的 trim 阈值是线性 HDR 里的 1，SDR 成片到不了，这里用 0.75；光晕半径 1 折合宽度 0.4%；MTF 像素按 4032 宽换算；暗角 0.2 折成我们的 0.57；底色分别是 Portra 400、Ektar 100、Kodachrome 64、Acros 100。「Halide」分类用同一条链配 Halide 原版 LUT，并补上 Rembrandt、Zephyr（参数同 Valencia，颗粒 0.4 / 0.5），和这四款对照 |
 | 自动影调 | Lampa Neutral | 256 格 RGB 直方图（Display P3 编码值，百分比）；黑端累计 ≥0.01、白端 ≥0.03，当前格 >0.001，下一格 >0.0001 且比值 ≤7；`b=min(i/256,0.25)·(1−0.2)`，`w0=max(1−i/256,0.65)`，`w=w0+0.25(1−w0)`；五点 (b,0) (b+¼d,¼) (b+½d,½) (b+¾d,¾) (w,1) | 直方图在最长边 256 的缩小图上算，每帧一次 |
 | 重压 / 淡褪 / 过期 | Mood Crush / Faded / Expired | 对比 1.3 / 1.1 / 0.9，曝光 −0.1 / 0 / −0.05，褪色 0 / 0.15 / 0.23，mute 0 / 0.15 / 0.08，饱和 1 / 0.85 / 0.85；感光度 400 = 颗粒 0.3 尺寸 3，200 = 0.3 尺寸 2，800 = 0.5 尺寸 3 | mute 当作额外降饱和；Mood 褪色 ×2 当作我们的褪色；尺寸 3 用粗颗粒板；三款各配一个感光度档；底色 Portra 400、Portra 160、Elite 200 |
 | 胶片 +1/3 | NOMO RAW Analog | +0.33 EV，颗粒 0.5，暗角 0.3 | 曝光在成片上做，不改相机曝光补偿；底色 Portra 400 |
