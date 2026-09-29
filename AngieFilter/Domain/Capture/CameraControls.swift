@@ -25,16 +25,13 @@ enum CameraAuthorization: Sendable {
 
 struct ZoomStop: Identifiable, Equatable, Sendable {
     let factor: CGFloat
-    let display: CGFloat
+    /// 35mm-equivalent focal length in millimeters.
+    let focalLength: CGFloat
 
     var id: CGFloat { factor }
 
     var title: String {
-        let rounded = (display * 10).rounded() / 10
-        if rounded == rounded.rounded() {
-            return String(Int(rounded))
-        }
-        return String(format: "%.1f", rounded)
+        String(Int(focalLength.rounded()))
     }
 }
 
@@ -45,7 +42,7 @@ struct CameraStatus: Equatable, Sendable {
     var flashMode: FlashMode = .off
     var aspectRatio: AspectRatio = .threeFour
     var zoomFactor: CGFloat = 1
-    var displayZoom: CGFloat = 1
+    var focalLength: CGFloat = 24
     var zoomStops: [ZoomStop] = []
     var hasCamera = true
 }

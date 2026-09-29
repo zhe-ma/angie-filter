@@ -1,7 +1,6 @@
 import CoreImage
-import QuartzCore
 
-/// Keeps a small bitmap copy of the latest frame for the filter strip.
+/// Hands the filter strip one bitmap copy of the next frame, only when asked.
 /// The capture pool has only a few buffers and stops delivering frames when any stay checked out,
 /// so nothing outside the live preview may hold a camera-backed `CIImage`.
 final class ThumbnailFrameTap: @unchecked Sendable {
@@ -9,24 +8,23 @@ final class ThumbnailFrameTap: @unchecked Sendable {
         .cacheIntermediates: false,
         .workingColorSpace: CGColorSpace(name: CGColorSpace.displayP3) as Any
     ])
-    private static let interval: CFTimeInterval = 0.5
 
-    private let state = Locked(TapState())
+    private let waiting = Locked<[@Sendable (CIImage?) -> Void]>([])
 
-    /// Call on the video queue with every upright, cropped frame. Copies at most twice a second.
-    func offer(_ image: CIImage) {
-        let due = state.with { state -> Bool in
-            let now = CACurrentMediaTime()
-            guard now - state.copiedAt >= Self.interval else { return false }
-            state.copiedAt = now
-            return true
-        }
-        guard due, let copy = Self.copy(image) else { return }
-        state.with { $0.image = copy }
+    /// The completion runs on the video queue with the next upright, cropped frame.
+    func request(_ completion: @escaping @Sendable (CIImage?) -> Void) {
+        waiting.with { $0.append(completion) }
     }
 
-    func latest() -> CIImage? {
-        state.with { $0.image }
+    /// Call on the video queue with every frame. Costs one lock unless a request is waiting.
+    func offer(_ image: CIImage) {
+        let handlers = waiting.with { list -> [@Sendable (CIImage?) -> Void] in
+            defer { list.removeAll() }
+            return list
+        }
+        guard !handlers.isEmpty else { return }
+        let copy = Self.copy(image)
+        handlers.forEach { $0(copy) }
     }
 
     private static func copy(_ image: CIImage) -> CIImage? {
@@ -38,9 +36,4 @@ final class ThumbnailFrameTap: @unchecked Sendable {
               let cgImage = context.createCGImage(shifted, from: extent) else { return nil }
         return CIImage(cgImage: cgImage)
     }
-}
-
-private struct TapState {
-    var image: CIImage?
-    var copiedAt: CFTimeInterval = 0
 }

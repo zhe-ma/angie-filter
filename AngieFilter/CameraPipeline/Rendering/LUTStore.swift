@@ -8,22 +8,81 @@ import ImageIO
 final class LUTStore: @unchecked Sendable {
     static let shared = LUTStore()
     static let dimension = 64
+    /// Filter-strip cubes keep every third lattice point: 22³, about 170KB each.
+    static let smallDimension = 22
     private static let side = 512
 
     private let lock = NSLock()
     private var cache: [String: Data] = [:]
     private var recent: [String] = []
     private let capacity = 16
+    private var smallCache: [String: Data] = [:]
+    private var smallRecent: [String] = []
+    private let smallCapacity = 96
 
     func latticeData(named name: String) -> Data? {
         if let cached = stored(name) { return cached }
+        guard let data = Self.decode(named: name) else { return nil }
+        return remember(data, name: name)
+    }
+
+    /// Never touches the full-size cache, so scrolling the strip cannot evict the preview's LUT.
+    func smallLatticeData(named name: String) -> Data? {
+        if let cached = storedSmall(name) { return cached }
+        guard let full = lock.withLock({ cache[name] }) ?? Self.decode(named: name) else { return nil }
+        return rememberSmall(Self.subsampled(full), name: name)
+    }
+
+    private static func decode(named name: String) -> Data? {
         let start = PerfLog.now()
-        guard let cgImage = Self.loadImage(named: name), let data = Self.lattice(from: cgImage) else {
+        guard let cgImage = loadImage(named: name), let data = lattice(from: cgImage) else {
             PerfLog.line("lut \(name) failed to load")
             return nil
         }
         PerfLog.line(String(format: "lut %@ loaded in %.1f ms", name, PerfLog.ms(since: start)))
-        return remember(data, name: name)
+        return data
+    }
+
+    private static func subsampled(_ full: Data) -> Data {
+        let step = (dimension - 1) / (smallDimension - 1)
+        var small = [Float](repeating: 1, count: smallDimension * smallDimension * smallDimension * 4)
+        full.withUnsafeBytes { raw in
+            let source = raw.bindMemory(to: Float.self)
+            var index = 0
+            for blue in 0..<smallDimension {
+                for green in 0..<smallDimension {
+                    for red in 0..<smallDimension {
+                        let from = ((blue * step * dimension + green * step) * dimension + red * step) * 4
+                        small[index] = source[from]
+                        small[index + 1] = source[from + 1]
+                        small[index + 2] = source[from + 2]
+                        index += 4
+                    }
+                }
+            }
+        }
+        return small.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+
+    private func storedSmall(_ name: String) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let data = smallCache[name] else { return nil }
+        smallRecent.removeAll { $0 == name }
+        smallRecent.append(name)
+        return data
+    }
+
+    private func rememberSmall(_ data: Data, name: String) -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        smallCache[name] = data
+        smallRecent.removeAll { $0 == name }
+        smallRecent.append(name)
+        while smallRecent.count > smallCapacity {
+            smallCache.removeValue(forKey: smallRecent.removeFirst())
+        }
+        return data
     }
 
     private func stored(_ name: String) -> Data? {

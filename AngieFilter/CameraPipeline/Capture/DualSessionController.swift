@@ -75,8 +75,8 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
     }
 
-    func currentThumbnailSource() -> CIImage? {
-        thumbnailTaps[selected.with { $0 }]?.latest()
+    func requestThumbnailSource(_ completion: @escaping @Sendable (CIImage?) -> Void) {
+        thumbnailTaps[selected.with { $0 }]?.request(completion)
     }
 
     func start(completion: @escaping (DualStartOutcome) -> Void) {
@@ -574,7 +574,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         if let device {
             status.zoomStops = Self.stops(for: device)
             status.zoomFactor = device.videoZoomFactor
-            status.displayZoom = ZoomLadderBuilder.displayZoom(for: device.videoZoomFactor, on: device)
+            status.focalLength = ZoomLadderBuilder.focalLength(for: device.videoZoomFactor, on: device)
         }
         let snapshot = status
         DispatchQueue.main.async { [weak self] in
@@ -635,18 +635,9 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         return UIImage(cgImage: cgImage)
     }
 
+    /// Multicam formats are smaller, so digital presets stop at 50mm.
     private static func stops(for device: AVCaptureDevice) -> [ZoomStop] {
-        if device.position == .front {
-            return [ZoomStop(factor: ZoomLadderBuilder.clamped(1, on: device), display: 1)]
-        }
-        let wide = ZoomLadderBuilder.wideAngleFactor(for: device)
-        let one = ZoomLadderBuilder.clamped(wide, on: device)
-        var stops = [ZoomStop(factor: one, display: 1)]
-        let two = ZoomLadderBuilder.clamped(wide * 2, on: device)
-        if two > one + 0.05 {
-            stops.append(ZoomStop(factor: two, display: ZoomLadderBuilder.displayZoom(for: two, on: device)))
-        }
-        return stops
+        ZoomLadderBuilder.stops(for: device, longestPreset: 50)
     }
 
     /// One discovery session over both sides. A session limited to one position only reports

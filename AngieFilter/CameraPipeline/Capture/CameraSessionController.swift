@@ -44,8 +44,8 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
-    func currentThumbnailSource() -> CIImage? {
-        thumbnailTap.latest()
+    func requestThumbnailSource(_ completion: @escaping @Sendable (CIImage?) -> Void) {
+        thumbnailTap.request(completion)
     }
 
     func start() {
@@ -82,7 +82,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 device.videoZoomFactor = clamped
                 device.unlockForConfiguration()
                 self.status.zoomFactor = clamped
-                self.status.displayZoom = ZoomLadderBuilder.displayZoom(for: clamped, on: device)
+                self.status.focalLength = ZoomLadderBuilder.focalLength(for: clamped, on: device)
                 self.publishStatus()
             } catch {
                 self.publishFailure("变焦失败")
@@ -305,15 +305,16 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     private func applyInitialZoom(on device: AVCaptureDevice) {
         let stops = ZoomLadderBuilder.stops(for: device)
-        let wide = stops.first { abs($0.display - 1) < 0.05 }?.factor ?? device.videoZoomFactor
-        let factor = ZoomLadderBuilder.clamped(wide, on: device)
+        let factor = ZoomLadderBuilder.clamped(ZoomLadderBuilder.wideAngleFactor(for: device), on: device)
         if (try? device.lockForConfiguration()) != nil {
             device.videoZoomFactor = factor
             device.unlockForConfiguration()
         }
         status.zoomStops = stops
         status.zoomFactor = factor
-        status.displayZoom = ZoomLadderBuilder.displayZoom(for: factor, on: device)
+        status.focalLength = ZoomLadderBuilder.focalLength(for: factor, on: device)
+        PerfLog.line(String(format: "zoom stops %@ (main %.0fmm)",
+                            stops.map(\.title).joined(separator: " "), ZoomLadderBuilder.mainFocalLength(for: device)))
     }
 
     private func avFlashMode(_ mode: FlashMode) -> AVCaptureDevice.FlashMode {

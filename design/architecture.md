@@ -94,7 +94,7 @@ flowchart TB
 
 `RenderParameters` 放在 `Locked` 里。`videoQueue` 取出一份值再渲染，不在预览队列里锁住 ViewModel。预览画进 `CAMetalLayer`，渲染不经过主线程；GPU 上同时只有一帧，其余只留最新一张。
 
-缩略图取 `ThumbnailFrameTap` 每 0.5 秒拷下的一张位图：最近一帧已经转正、镜像和裁切过，缩到宽 160，不再引用相机缓冲。缩略图再取中间正方形。先把这一帧渲成小图，再对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `thumbnail`。已选那一款先渲，每 4 张交给界面一次。同一套 `CIContext` 一直复用。缩略图不加相框。面板打开时大约每 1 秒刷新这一排；上一轮没算完就跳过，不打断。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
+缩略图只用一张参考帧。打开滤镜面板时，`CameraViewModel` 通过会话的 `requestThumbnailSource` 向 `ThumbnailFrameTap` 要下一帧；这一帧已经转正、镜像和裁切过，缩到宽 160 拷成位图，不再引用相机缓冲。缩略图队列再取中间正方形，然后对当前分类调用 `GradeApplicator.apply`，调节用这款的默认值，质量 `thumbnail`，LUT 用 22³ 小立方。每 8 款拼成一行图集读回，切开后写进 `ThumbnailStore`。每款在一次打开里只渲一次，换分类只补新款，面板开着时不再刷新。收起面板时计数加一，还没跑完的行直接丢弃。同一套 `CIContext` 一直复用。缩略图不加相框。分类由 `LookLibrary.families` 决定，原图单独一组排在最前。
 
 相框在 `GradeApplicator` 之后。预览和成片共用 `FrameCompositor`。底栏字图在主线程生成，`videoQueue` 只贴图。细节在 [frame.md](frame.md)。
 

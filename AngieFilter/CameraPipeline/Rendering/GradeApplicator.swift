@@ -12,7 +12,7 @@ enum GradeApplicator {
         if case .effect(let effect) = look.grade {
             base = EffectChain.lens(image, grade: effect)
         }
-        let colored = ColorGrader.apply(base, grade: look.grade)
+        let colored = ColorGrader.apply(base, grade: look.grade, quality: quality)
         let finished = FilmFinish.apply(
             colored,
             adjustment: adjustment,

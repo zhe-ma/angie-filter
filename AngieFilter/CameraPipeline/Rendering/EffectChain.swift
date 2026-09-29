@@ -16,8 +16,8 @@ enum EffectChain {
         }
     }
 
-    static func apply(_ image: CIImage, grade: EffectGrade) -> CIImage {
-        let lut = { (input: CIImage) in ColorGrader.lut(input, name: grade.lutName) }
+    static func apply(_ image: CIImage, grade: EffectGrade, quality: RenderQuality) -> CIImage {
+        let lut = { (input: CIImage) in ColorGrader.lut(input, name: grade.lutName, quality: quality) }
         switch grade.recipe {
         case .dazzFisheyeWide:
             return aberration(lut(image), blurAt2048: 10)

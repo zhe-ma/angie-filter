@@ -37,7 +37,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `CameraFacing` | 后置或前置 |
 | `FlashMode` | 关、开、自动 |
 | `CameraAuthorization` | 相机权限状态 |
-| `ZoomStop` | 变焦条上的一档 |
+| `ZoomStop` | 变焦条上的一档，带等效焦段 |
 | `CameraStatus` | 界面看到的朝向、变焦、闪光灯、权限 |
 | `Look` | 一款滤镜。界面文案叫滤镜 |
 | `GrainPlateKind` | 无颗粒、细板、粗板 |
@@ -69,9 +69,9 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | --- | --- |
 | `CameraSessionController` | 配置相机会话，收预览帧和照片，回传状态 |
 | `DualSessionController` | 前后广角同时采集。模拟器上不启动 |
-| `ThumbnailFrameTap` | 视频队列上每 0.5 秒拷一张宽 160 的位图给滤镜条，不拿相机缓冲 |
+| `ThumbnailFrameTap` | 有请求时把视频队列上的下一帧拷成宽 160 的位图给滤镜条，不拿相机缓冲 |
 | `PhotoOrientation` | 照片连接设成竖拍、不镜像，读图时按 EXIF 转正 |
-| `ZoomLadderBuilder` | 从当前后置设备读出变焦档 |
+| `ZoomLadderBuilder` | 从当前设备读出实体镜头档和推荐焦段，换算等效焦段 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色 |
 | `GradeApplicator` | 颜色、收尾，再按强度溶回原图 |
 | `ColorGrader` | LUT 走 `CIColorCubeWithColorSpace`（sRGB），内置款调用 Core Image 滤镜，实验室交给 `EffectChain` |
@@ -79,7 +79,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `EffectKernels` | 从 `default.metallib` 读 `EffectKernels.metal` 里的 kernel |
 | `AutoLevels` | Lampa 的直方图黑白点和五点曲线 |
 | `FilmFinish` | 颜色之后的褪色、光晕、颗粒、暗角，只用系统滤镜 |
-| `LUTStore` | 把 512×512 LUT 图展开成 64³，最近 16 张 |
+| `LUTStore` | 把 512×512 LUT 图展开成 64³，最近 16 张；缩略图另有 22³ 小立方，最近 96 张 |
 | `GrainLibrary` | 细、粗两张颗粒板 |
 | `FrameCompositor` | 调色之后把照片贴进更大的白画布 |
 | `DualFrameComposer` | 把两路已经调色的图按排列贴进同一张外框 |
@@ -97,8 +97,9 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 
 | 类型 | 作用 |
 | --- | --- |
-| `CameraView` | 取景、顶栏、相框、滤镜、快门。支持双摄时顶栏有「双摄」 |
+| `CameraView` | 取景区（只有画面和辅助线）、固定高度的控制台（焦段环加工具托盘 / 滤镜 / 相框）、快门行。`CameraPalette` 也在这里，确认页共用 |
+| `GridOverlay`、`LevelIndicator`、`LevelMonitor` | 三分网格线和水平仪。`LevelMonitor` 用 Core Motion 的重力读竖屏横滚角，只有水平仪观察它 |
 | `CameraViewModel` | 主线程状态。相框、滤镜调节和双摄的两套滤镜都只留在这次启动的内存里 |
 | `PlaceReader` | 使用期间的位置，逆地理成城市和区。关掉地点就停止 |
-| `FilterStripView` | 滤镜分类和缩略图 |
+| `FilterStripView` | 滤镜分类和缩略图，只观察 `ThumbnailStore` |
 | `ReviewView` | 重拍或保存。图里已经带相框 |

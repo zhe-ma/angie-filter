@@ -44,12 +44,14 @@ flowchart TB
 `ZoomLadderBuilder`：
 
 - 广角因子 `wideAngleFactor`：虚拟设备切换点的第一档；没有切换点时用 `max(minAvailableVideoZoomFactor, 1)`
-- 显示倍数 = 设备因子 / 广角因子
+- 主摄焦段 `mainFocalLength`：取广角那颗镜头当前格式的 `videoFieldOfView`（4:3 横向视角），按 35mm 对角线 43.27mm 换算：`f = 21.63 / (tan(视角/2) × 1.25)`。离 24 或 26 不到 2mm 时取整到这两个标称值，读不出视角时用 26
+- 等效焦段 = 主摄焦段 × 设备因子 / 广角因子
 - 上限 = `min(设备最大变焦, 广角因子 × 5)`
-- 档位 = 最小变焦，加上 `virtualDeviceSwitchOverVideoZoomFactors` 里不超过上限的点
-- 打开或翻转后，落到显示倍数约等于 1 的那一档
+- 档位 = 实体镜头（最小变焦，加上 `virtualDeviceSwitchOverVideoZoomFactors` 里不超过上限的点），再加推荐焦段 28、35、50、85 里落在范围内的。推荐焦段离某颗实体镜头不到 10% 时不单独出档
+- 前置的推荐焦段只到 35；双摄是多摄格式，推荐焦段只到 50
+- 打开或翻转后，落到广角因子，即主摄焦段
 
-捏合以开始时的 `zoomFactor` 为基准连续变化，松手后倍数读数停留约 0.7 秒。前置变焦条只有 1 倍，但可以捏合数码变焦，上限同样是显示倍数 5。
+iPhone 16 Pro 后置得到 13、24、28、35、50、85、120。档位标签只写数字。当前所在或刚越过的那一档改写成实时焦段，如「40mm」，黄字。取景画面上不显示焦段。捏合以开始时的 `zoomFactor` 为基准连续变化，上限同样是广角因子 × 5。
 
 变焦档每一档占 44pt 的点击区，整条变焦条吞掉档与档之间的点击，点偏了不会落到下面的点按对焦上。
 
@@ -68,7 +70,7 @@ flowchart TB
 | 16:9 | 16/9 | 横向宽条 |
 | 2:1 | 2 | 横向宽条 |
 
-标签是转正后照片的宽:高。顶栏的画幅按钮点开是一张菜单，直接选。`CameraView` 用同一个 `widthOverHeight` 约束取景区域，画幅外是黑底。
+标签是转正后照片的宽:高。工具托盘的画幅按钮点开是一张菜单，直接选。`CameraView` 的取景区大小固定，照片按同一个 `widthOverHeight` 等比放进去并居中，画幅外是黑底。
 
 ## 方向和镜像
 
@@ -111,7 +113,7 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 
 ## 双摄
 
-单摄继续用上面的 `AVCaptureSession` 和虚拟相机。点「双摄」后先停掉它，再启动 `AVCaptureMultiCamSession`。退出时反过来。预览视图不换。两路先各自调色，合成后再套相框。成片在双摄自己的 `CIContext` 里导出，不占用预览那一个 context。模拟器 `isMultiCamSupported` 为 false，顶栏没有这个按钮。
+单摄继续用上面的 `AVCaptureSession` 和虚拟相机。点「双摄」后先停掉它，再启动 `AVCaptureMultiCamSession`。退出时反过来。预览视图不换。两路先各自调色，合成后再套相框。成片在双摄自己的 `CIContext` 里导出，不占用预览那一个 context。模拟器 `isMultiCamSupported` 为 false，工具行没有这个按钮。
 
 ## 以后：Live Photo 和录像
 

@@ -4,7 +4,7 @@ struct FilterStripView: View {
     let looks: [Look]
     let familyID: String
     let selectedID: Look.ID
-    let thumbnails: [Look.ID: UIImage]
+    @ObservedObject var store: ThumbnailStore
 
     var onSelect: (Look) -> Void
 
@@ -19,14 +19,16 @@ struct FilterStripView: View {
                             VStack(spacing: 6) {
                                 thumbnail(for: look)
                                     .frame(width: 56, height: 56)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(selectedID == look.id ? Color.white : Color.white.opacity(0.16), lineWidth: selectedID == look.id ? 2 : 1)
+                                        if selectedID == look.id {
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .stroke(Color.white, lineWidth: 2)
+                                        }
                                     }
                                 Text(look.name)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(selectedID == look.id ? Color.white : Color.white.opacity(0.55))
+                                    .font(.system(size: 10, weight: selectedID == look.id ? .semibold : .regular))
+                                    .foregroundStyle(selectedID == look.id ? Color.white : Color.white.opacity(0.5))
                                     .lineLimit(2)
                                     .multilineTextAlignment(.center)
                                     .frame(width: 64)
@@ -62,7 +64,7 @@ struct FilterStripView: View {
 
     @ViewBuilder
     private func thumbnail(for look: Look) -> some View {
-        if let image = thumbnails[look.id] {
+        if let image = store.images[look.id] {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()

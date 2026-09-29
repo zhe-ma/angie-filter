@@ -2,9 +2,21 @@ import Combine
 import CoreImage
 import SwiftUI
 
+/// Observed only by the filter strip, so a thumbnail refresh never re-renders the camera screen.
+@MainActor
+final class ThumbnailStore: ObservableObject {
+    @Published private(set) var images: [Look.ID: UIImage] = [:]
+
+    func merge(_ fresh: [Look.ID: UIImage]) {
+        images.merge(fresh) { _, new in new }
+    }
+}
+
 /// One low-priority context, so the strip yields the GPU to the live preview.
-/// Each refresh renders the frame once into a small square, then grades that bitmap per look.
+/// Each refresh renders the frame once into a small square, lays every graded look out as a tile
+/// of one atlas, and reads the atlas back with a single GPU pass.
 private enum ThumbnailBake {
+    private static let columns = 8
     static let context = CIContext(options: [
         .cacheIntermediates: false,
         .priorityRequestLow: true,
@@ -25,15 +37,30 @@ private enum ThumbnailBake {
         return CIImage(cgImage: cgImage)
     }
 
-    static func image(from base: CIImage, look: Look) -> UIImage? {
-        let graded = GradeApplicator.apply(
-            base,
-            look: look,
-            adjustment: .baseline(for: look),
-            quality: .thumbnail
-        )
-        guard let cgImage = context.createCGImage(graded, from: base.extent) else { return nil }
-        return UIImage(cgImage: cgImage)
+    static func images(from base: CIImage, looks: [Look]) -> [Look.ID: UIImage] {
+        guard !looks.isEmpty else { return [:] }
+        let edge = base.extent.width
+        let rows = (looks.count + columns - 1) / columns
+        let atlasRect = CGRect(x: 0, y: 0, width: edge * CGFloat(columns), height: edge * CGFloat(rows))
+        var atlas = CIImage.empty()
+        var tiles: [(id: Look.ID, rect: CGRect)] = []
+        for (index, look) in looks.enumerated() {
+            let x = CGFloat(index % columns) * edge
+            let y = CGFloat(index / columns) * edge
+            let graded = GradeApplicator.apply(base, look: look, adjustment: .baseline(for: look), quality: .thumbnail)
+                .cropped(to: base.extent)
+                .transformed(by: CGAffineTransform(translationX: x, y: y))
+            atlas = graded.composited(over: atlas)
+            tiles.append((look.id, CGRect(x: x, y: atlasRect.height - y - edge, width: edge, height: edge)))
+        }
+        guard let cgImage = context.createCGImage(atlas, from: atlasRect) else { return [:] }
+        var images: [Look.ID: UIImage] = [:]
+        for tile in tiles {
+            if let slice = cgImage.cropping(to: tile.rect) {
+                images[tile.id] = UIImage(cgImage: slice)
+            }
+        }
+        return images
     }
 }
 
@@ -54,7 +81,7 @@ final class CameraViewModel: ObservableObject {
     @Published var reviewImage: UIImage?
     @Published var isSaving = false
     @Published var focusPoint: CGPoint?
-    @Published var thumbnails: [Look.ID: UIImage] = [:]
+    let thumbnails = ThumbnailStore()
     @Published var banner: String?
     @Published var showZoomReadout = false
 
@@ -64,7 +91,7 @@ final class CameraViewModel: ObservableObject {
 
     @Published private(set) var dualAvailable = DualSessionController.isSupported
     @Published private(set) var dualOn = false
-    @Published var dualLayout: DualLayout = .stacked
+    @Published var dualLayout: DualLayout = .pip
     @Published var dualLead: CameraFacing = .back
     @Published var dualSelected: CameraFacing = .back
     @Published var pipCorner: PipCorner = .bottomRight
@@ -73,8 +100,12 @@ final class CameraViewModel: ObservableObject {
     @Published var veil: Float = 0.45
 
     private var savedAdjustments: [Look.ID: LookAdjustment] = [:]
-    private var thumbnailWork: DispatchWorkItem?
-    private var refreshTimer: Timer?
+    /// The frame caught when the filter panel opened. Every thumbnail until it closes grades this one bitmap.
+    private var thumbnailBase: CIImage?
+    private var thumbnailRendered: Set<Look.ID> = []
+    private var thumbnailEpoch = 0
+    private let thumbnailLiveEpoch = Locked(0)
+    private let thumbnailQueue = DispatchQueue(label: "angie.thumbnails", qos: .userInitiated)
     private var focusClear: Task<Void, Never>?
     private var zoomHide: Task<Void, Never>?
     private var dayTimer: Timer?
@@ -204,7 +235,7 @@ final class CameraViewModel: ObservableObject {
                         guard self.dualOn else { return }
                         self.syncParameters()
                         self.dualTransition = false
-                        if self.filtersOpen { self.refreshThumbnails() }
+                        if self.filtersOpen { self.captureThumbnailReference() }
                     case .waitingForAuthorization:
                         guard self.dualOn else { return }
                         self.dualTransition = false
@@ -231,7 +262,7 @@ final class CameraViewModel: ObservableObject {
             self.session.start()
             self.syncParameters()
             self.dualTransition = false
-            if self.filtersOpen { self.refreshThumbnails() }
+            if self.filtersOpen { self.captureThumbnailReference() }
         }
     }
 
@@ -272,7 +303,11 @@ final class CameraViewModel: ObservableObject {
         adjustmentNotice = nil
         dualSession.setSelected(facing)
         syncParameters()
-        if filtersOpen { refreshThumbnails() }
+        if filtersOpen { captureThumbnailReference() }
+    }
+
+    func dualLookName(for facing: CameraFacing) -> String {
+        LookLibrary.look(id: dualLook[facing] ?? Look.originalID).name
     }
 
     func dualGeometrySettings() -> DualSettings {
@@ -308,7 +343,7 @@ final class CameraViewModel: ObservableObject {
         guard familyID != id else { return }
         familyID = id
         adjustOpen = false
-        refreshThumbnails()
+        renderThumbnails()
         syncParameters()
     }
 
@@ -371,13 +406,7 @@ final class CameraViewModel: ObservableObject {
         filtersOpen.toggle()
         if filtersOpen {
             familyID = LookLibrary.family(containing: lookID).id
-            refreshThumbnails()
-            refreshTimer?.invalidate()
-            refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.refreshThumbnails(restart: false)
-                }
-            }
+            captureThumbnailReference()
         } else {
             closeFilters()
         }
@@ -386,10 +415,7 @@ final class CameraViewModel: ObservableObject {
     func closeFilters() {
         filtersOpen = false
         adjustOpen = false
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        thumbnailWork?.cancel()
-        thumbnailWork = nil
+        resetThumbnails()
     }
 
     func toggleFrame() {
@@ -473,7 +499,8 @@ final class CameraViewModel: ObservableObject {
         let dx = current.x - start.x
         let dy = current.y - start.y
         if dx * dx + dy * dy > 64 { return }
-        if filtersOpen || frameOpen {
+        // In dual mode a tap on a pane picks which camera the open filter panel edits.
+        if frameOpen || (filtersOpen && !dualOn) {
             dismissPanels()
         }
         let photo = photoRect(in: viewSize)
@@ -721,64 +748,63 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    private func refreshThumbnails(restart: Bool = true) {
+    /// Asks the camera for its next frame and makes it the reference for this opening of the panel.
+    private func captureThumbnailReference() {
         guard filtersOpen else { return }
-        if !restart, thumbnailWork != nil { return }
-        let source = dualOn ? dualSession.currentThumbnailSource() : session.currentThumbnailSource()
-        guard let source else { return }
-        thumbnailWork?.cancel()
-        let selected = lookID
-        let looks = visibleLooks.filter { $0.id == selected } + visibleLooks.filter { $0.id != selected }
-        var work: DispatchWorkItem?
-        work = DispatchWorkItem {
-            let deliver = { (images: [Look.ID: UIImage], last: Bool) in
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, let work, work.isCancelled == false else { return }
-                    if !images.isEmpty {
-                        self.thumbnails.merge(images) { _, new in new }
-                    }
-                    if last, self.thumbnailWork === work {
-                        self.thumbnailWork = nil
-                    }
+        let epoch = resetThumbnails()
+        let queue = thumbnailQueue
+        let arrived: @Sendable (CIImage?) -> Void = { [weak self] source in
+            queue.async {
+                let base = source.flatMap(ThumbnailBake.base(from:))
+                DispatchQueue.main.async {
+                    self?.referenceArrived(base, epoch: epoch)
                 }
-            }
-            let passStart = PerfLog.now()
-            guard let base = ThumbnailBake.base(from: source) else {
-                deliver([:], true)
-                return
-            }
-            let baseMs = PerfLog.ms(since: passStart)
-            var slowest = (id: "", ms: 0.0)
-            var batch: [Look.ID: UIImage] = [:]
-            for (index, look) in looks.enumerated() {
-                if work?.isCancelled == true {
-                    PerfLog.line("thumbnails cancelled after \(index) of \(looks.count)")
-                    return
-                }
-                let lookStart = PerfLog.now()
-                if let image = ThumbnailBake.image(from: base, look: look) {
-                    batch[look.id] = image
-                }
-                let lookMs = PerfLog.ms(since: lookStart)
-                if lookMs > slowest.ms { slowest = (look.id, lookMs) }
-                let last = index == looks.count - 1
-                if batch.count == 4 || last {
-                    deliver(batch, last)
-                    batch = [:]
-                }
-            }
-            PerfLog.line(String(
-                format: "thumbnails %d looks in %.1f ms (base %.1f, slowest %@ %.1f)",
-                looks.count, PerfLog.ms(since: passStart), baseMs, slowest.id, slowest.ms
-            ))
-            if looks.isEmpty {
-                deliver([:], true)
             }
         }
-        thumbnailWork = work
-        if let work {
-            let qos: DispatchQoS.QoSClass = restart ? .userInitiated : .utility
-            DispatchQueue.global(qos: qos).async(execute: work)
+        if dualOn {
+            dualSession.requestThumbnailSource(arrived)
+        } else {
+            session.requestThumbnailSource(arrived)
+        }
+    }
+
+    @discardableResult
+    private func resetThumbnails() -> Int {
+        thumbnailEpoch += 1
+        let epoch = thumbnailEpoch
+        thumbnailLiveEpoch.with { $0 = epoch }
+        thumbnailBase = nil
+        thumbnailRendered = []
+        return epoch
+    }
+
+    private func referenceArrived(_ base: CIImage?, epoch: Int) {
+        guard epoch == thumbnailEpoch, filtersOpen, let base else { return }
+        thumbnailBase = base
+        renderThumbnails()
+    }
+
+    /// Grades the reference once for each look of the current family not yet drawn in this opening,
+    /// one atlas row of eight at a time.
+    private func renderThumbnails() {
+        guard let base = thumbnailBase else { return }
+        let looks = visibleLooks.filter { !thumbnailRendered.contains($0.id) }
+        guard !looks.isEmpty else { return }
+        thumbnailRendered.formUnion(looks.map(\.id))
+        let epoch = thumbnailEpoch
+        let live = thumbnailLiveEpoch
+        thumbnailQueue.async { [weak self] in
+            let start = PerfLog.now()
+            for first in stride(from: 0, to: looks.count, by: 8) {
+                guard live.with({ $0 }) == epoch else { return }
+                let row = Array(looks[first..<min(first + 8, looks.count)])
+                let images = ThumbnailBake.images(from: base, looks: row)
+                DispatchQueue.main.async {
+                    guard let self, self.thumbnailEpoch == epoch else { return }
+                    self.thumbnails.merge(images)
+                }
+            }
+            PerfLog.line(String(format: "thumbnails %d looks in %.1f ms", looks.count, PerfLog.ms(since: start)))
         }
     }
 
