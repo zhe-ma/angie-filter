@@ -23,6 +23,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let thumbnailTap = ThumbnailFrameTap()
     private let faceTracker = FaceTracker()
     private let dolly = DollyZoom()
+    private let glide = ZoomGlide()
+    private let watch = FaceWatch()
+    private let framing = FaceFraming()
     private let captureFacing = Locked(CameraFacing.back)
     private var status = CameraStatus()
     private var device: AVCaptureDevice?
@@ -45,16 +48,20 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     /// Touched only on `sessionQueue`.
     private var liveWanted = false
     private var videoMode = false
-    private var dollyWanted = false
-    private var dollyDirection = DollyDirection.away
-    /// The zoom the current 希区柯克 take started at.
-    private var dollyTakeZoom: CGFloat?
-    private var lastDollyPublish: CFTimeInterval = 0
-    private static let dollyPublishInterval: CFTimeInterval = 0.25
-    /// Times the main lens's widest a walk toward the face starts at: the face can grow to about 2.5 times its size.
-    private static let dollyTowardStart: CGFloat = 2.5
+    private var move: CameraMove?
+    private var dollyStrength: Float = 1
+    /// The zoom the current take started at, when it has a 运镜.
+    private var moveTakeZoom: CGFloat?
+    private var lastMovePublish: CFTimeInterval = 0
+    private static let movePublishInterval: CFTimeInterval = 0.25
+    /// Times the main lens's widest that the zooming-out moves start at: walking toward, the face can grow to about
+    /// 2.5 times its size.
+    private static let zoomedStart: CGFloat = 2.5
+    /// Times its start that 慢推 ends at.
+    private static let pushReach: CGFloat = 2
+    private static let glideSeconds: Double = 6
     /// Powers of two a second, for the moves to and from a take's start.
-    private static let dollyPresetRate: Float = 3
+    private static let movePresetRate: Float = 3
     /// The device is on an Apple Log format; the session is off its `.photo` preset.
     private var logActive = false
     private var frameRate = VideoFrameRate.thirty
@@ -67,7 +74,19 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         previewView = PreviewMetalView(device: metalDevice)
         super.init()
         dolly.onZoom = { [weak self] factor, rate in
-            self?.sessionQueue.async { self?.rampDolly(to: factor, rate: rate) }
+            self?.sessionQueue.async { self?.rampMove(to: factor, rate: rate) }
+        }
+        glide.onZoom = { [weak self] factor, rate in
+            self?.rampMove(to: factor, rate: rate)
+        }
+        glide.onFinish = { [weak self] in
+            self?.publishStatus()
+        }
+        watch.onSighting = { [weak self] face, shot, extent in
+            self?.dolly.measure(face, shot: shot, extent: extent)
+            if let face {
+                self?.framing.sight(face, extent: extent)
+            }
         }
     }
 
@@ -110,6 +129,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 self.status.logVideo = false
             }
             self?.dolly.disarm()
+            self?.glide.stop()
+            self?.watch.stop()
+            self?.framing.follow(false)
             if let self, self.session.isRunning {
                 self.session.stopRunning()
                 self.status.isRunning = false
@@ -138,45 +160,66 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 self.status.zoomFactor = clamped
                 self.status.focalLength = ZoomLadderBuilder.focalLength(for: clamped, on: device)
                 self.publishStatus()
-                // Mid-take, a new framing is a new size to keep.
-                self.applyDolly()
+                // Mid-take, a new framing is a new size and place to keep, and a glide leaves the zoom to the hand.
+                self.glide.stop()
+                self.applyMove(relock: true)
             } catch {
                 self.publishFailure("变焦失败")
             }
         }
     }
 
-    /// 希区柯克变焦, in video mode only. Turning it on or picking a direction moves the zoom to where that walk starts;
-    /// it follows the face only during a take, which starts from whatever zoom the shot was framed at.
-    func setDollyZoom(_ on: Bool, direction: DollyDirection) {
+    /// 运镜, in video mode only; nil is off. Picking one moves the zoom to where it starts. The move runs only during a
+    /// take, from whatever zoom the shot was framed at.
+    func setCameraMove(_ next: CameraMove?) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            let changed = on && (!self.dollyWanted || self.dollyDirection != direction)
-            self.dollyWanted = on
-            self.dollyDirection = direction
+            let changed = next != nil && next != self.move
+            self.move = next
+            self.glide.stop()
             if changed {
-                self.presetDolly()
+                self.presetMove()
             }
-            self.applyDolly()
+            self.applyMove()
         }
     }
 
-    /// Walking away starts at the main lens's widest. Walking toward starts in, with room to zoom out as the face grows.
-    private func presetDolly() {
-        guard dollyWanted, videoMode, recorder.with({ $0 }) == nil, let device else { return }
-        let range = Self.dollyRange(for: device, at: ZoomLadderBuilder.wideAngleFactor(for: device))
-        let start = dollyDirection == .away ? range.lowerBound : min(range.lowerBound * Self.dollyTowardStart, range.upperBound)
-        guard (try? device.lockForConfiguration()) != nil else { return }
-        device.ramp(toVideoZoomFactor: start, withRate: Self.dollyPresetRate)
-        device.unlockForConfiguration()
-        status.zoomFactor = start
-        status.focalLength = ZoomLadderBuilder.focalLength(for: start, on: device)
-        publishStatus()
+    /// 希区柯克's strength for the next take: 1 holds the face's size.
+    func setDollyStrength(_ strength: Float) {
+        sessionQueue.async { [weak self] in
+            self?.dollyStrength = strength
+        }
     }
 
-    /// Armed only while recording, from the zoom now, which also makes the face's size now the one kept.
+    /// Zooming in starts at the main lens's widest; zooming out starts in, with room to go.
+    private func presetMove() {
+        guard let move, videoMode, recorder.with({ $0 }) == nil, let device else { return }
+        let range = Self.moveRange(for: device, at: ZoomLadderBuilder.wideAngleFactor(for: device))
+        let start = move.zoomsIn ? range.lowerBound : min(range.lowerBound * Self.zoomedStart, range.upperBound)
+        rampMoveEnd(to: start)
+    }
+
+    /// The cut is in whenever 运镜 is on; mid-take the face is watched and the cut follows it. `relock` keeps the
+    /// face wherever it is now, for a new framing.
+    private func applyMove(relock: Bool = false) {
+        let on = move != nil && videoMode && isConfigured
+        let taking = on && recorder.with({ $0 }) != nil
+        framing.setOn(on)
+        if taking, !watch.isOn {
+            watch.start()
+            framing.follow(true)
+        } else if taking, relock {
+            framing.follow(true)
+        } else if !taking, watch.isOn {
+            watch.stop()
+            framing.follow(false)
+        }
+        applyDolly()
+    }
+
+    /// 希区柯克 follows the face only mid-take, from the zoom now, which also makes the face's size now the one kept.
     private func applyDolly() {
-        guard dollyWanted, videoMode, isConfigured, recorder.with({ $0 }) != nil, let device else {
+        guard let move, move.followsFace, videoMode, isConfigured, recorder.with({ $0 }) != nil, let device else {
             if dolly.isArmed {
                 dolly.disarm()
                 // The last step may not have reached the focal readout.
@@ -184,40 +227,55 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             }
             return
         }
-        let range = Self.dollyRange(for: device, at: device.videoZoomFactor)
-        dolly.arm(device: device, range: range, direction: dollyDirection)
-        PerfLog.line(String(format: "dolly armed %@ at %.2f, range %.2f-%.2f", dollyDirection.rawValue,
-                            device.videoZoomFactor, range.lowerBound, range.upperBound))
+        let range = Self.moveRange(for: device, at: device.videoZoomFactor)
+        dolly.arm(device: device, range: range, zoomsIn: move.zoomsIn, strength: Double(dollyStrength))
+        PerfLog.line(String(format: "dolly armed %@ at %.2f, range %.2f-%.2f, strength %.2f", move.title,
+                            device.videoZoomFactor, range.lowerBound, range.upperBound, dollyStrength))
+    }
+
+    /// 慢推 / 慢拉 at the start of a take: in to `pushReach` times the start, or out to the lens's widest.
+    private func startGlide() {
+        guard let move, !move.followsFace, videoMode, let device else { return }
+        let from = device.videoZoomFactor
+        let range = Self.moveRange(for: device, at: from)
+        let to = move.zoomsIn ? min(from * Self.pushReach, range.upperBound) : range.lowerBound
+        glide.start(from: from, to: to, over: Self.glideSeconds, on: sessionQueue)
+        PerfLog.line(String(format: "glide %@ %.2f -> %.2f over %.0fs", move.title, from, to, Self.glideSeconds))
     }
 
     /// After a take the zoom goes back to where it started, ready for the next.
-    private func returnDollyZoom() {
-        guard dollyWanted, videoMode, let start = dollyTakeZoom, let device, (try? device.lockForConfiguration()) != nil else { return }
-        dollyTakeZoom = nil
-        device.ramp(toVideoZoomFactor: start, withRate: Self.dollyPresetRate)
+    private func returnMoveZoom() {
+        guard move != nil, videoMode, let start = moveTakeZoom else { return }
+        moveTakeZoom = nil
+        rampMoveEnd(to: start)
+    }
+
+    private func rampMoveEnd(to factor: CGFloat) {
+        guard let device, (try? device.lockForConfiguration()) != nil else { return }
+        device.ramp(toVideoZoomFactor: factor, withRate: Self.movePresetRate)
         device.unlockForConfiguration()
-        status.zoomFactor = start
-        status.focalLength = ZoomLadderBuilder.focalLength(for: start, on: device)
+        status.zoomFactor = factor
+        status.focalLength = ZoomLadderBuilder.focalLength(for: factor, on: device)
         publishStatus()
     }
 
-    private func rampDolly(to factor: CGFloat, rate: Float) {
-        guard dolly.isArmed, let device, (try? device.lockForConfiguration()) != nil else { return }
+    private func rampMove(to factor: CGFloat, rate: Float) {
+        guard dolly.isArmed || glide.isRunning, let device, (try? device.lockForConfiguration()) != nil else { return }
         device.ramp(toVideoZoomFactor: factor, withRate: rate)
         device.unlockForConfiguration()
         status.zoomFactor = factor
         status.focalLength = ZoomLadderBuilder.focalLength(for: factor, on: device)
         // The zoom moves every frame; the focal readout doesn't need to redraw the camera screen that often.
         let now = CACurrentMediaTime()
-        if now - lastDollyPublish >= Self.dollyPublishInterval {
-            lastDollyPublish = now
+        if now - lastMovePublish >= Self.movePublishInterval {
+            lastMovePublish = now
             publishStatus()
         }
     }
 
     /// The span of the lens `zoom` is on, up to the zoom ceiling: past a switch-over the virtual camera changes lens
     /// and the picture jumps.
-    private static func dollyRange(for device: AVCaptureDevice, at zoom: CGFloat) -> ClosedRange<CGFloat> {
+    private static func moveRange(for device: AVCaptureDevice, at zoom: CGFloat) -> ClosedRange<CGFloat> {
         let switches = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) }
         let lower = ([device.minAvailableVideoZoomFactor] + switches.filter { $0 <= zoom + 0.001 }).max() ?? zoom
         let ceiling = ZoomLadderBuilder.clamped(.greatestFiniteMagnitude, on: device)
@@ -267,8 +325,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                 self.applyLogVideo()
                 self.applyExtrasAskingForMicrophone(on)
             }
-            self.presetDolly()
-            self.applyDolly()
+            self.glide.stop()
+            self.presetMove()
+            self.applyMove()
         }
     }
 
@@ -290,9 +349,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             self.recordingHold.with { $0 = hold }
             let fps = self.device.flatMap(Self.lockedFrameRate) ?? 30
             self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound, frameRate: fps) }
-            // The take keeps the face at its size when it starts.
-            self.dollyTakeZoom = self.dollyWanted && self.videoMode ? self.device?.videoZoomFactor : nil
-            self.applyDolly()
+            // The take keeps the face at its size when it starts, or glides from the zoom then.
+            self.moveTakeZoom = self.move != nil && self.videoMode ? self.device?.videoZoomFactor : nil
+            self.applyMove()
+            self.startGlide()
         }
     }
 
@@ -324,8 +384,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             }
             // A look picked during the take may want the other color space.
             self?.applyLogVideo()
-            self?.applyDolly()
-            self?.returnDollyZoom()
+            self?.glide.stop()
+            self?.applyMove()
+            self?.returnMoveZoom()
             guard let active else {
                 DispatchQueue.main.async { completion(nil) }
                 return
@@ -471,11 +532,16 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let log = CVPixelBufferGetPixelFormatType(pixelBuffer) == Self.logPixelFormat
             ? FrameImageMaker.logSources(from: pixelBuffer, parameters: renderParameters)
             : nil
-        let source = log?.display ?? FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
+        let uncut = log?.display ?? FrameImageMaker.sourceImage(from: pixelBuffer, parameters: renderParameters)
+        // 运镜 measures the whole frame, so the face's place and size don't depend on where the cut is.
+        dolly.noteFrame()
+        watch.offer(uncut, at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let cut = framing.cut(for: uncut.extent, at: CACurrentMediaTime())
+        let source = cut.map { FrameImageMaker.cut(uncut, to: $0) } ?? uncut
+        let scene = cut.flatMap { rect in log.map { FrameImageMaker.cut($0.scene, to: rect) } } ?? log?.scene
         thumbnailTap.offer(source)
-        dolly.offer(source, at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         let faces = renderParameters.beauty > 0 ? faceTracker.faces(offering: source) : []
-        let graded = FrameImageMaker.graded(source, scene: log?.scene, faces: faces, parameters: renderParameters)
+        let graded = FrameImageMaker.graded(source, scene: scene, faces: faces, parameters: renderParameters)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         previewView.draw(image: framed, token: previewToken.with { $0 })
         if let active = recorder.with({ $0 }) {
@@ -713,7 +779,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             applyFrameRate()
             previewToken.with { $0 = previewView.claimDrawer() }
             session.startRunning()
-            applyDolly()
+            applyMove()
         }
         status.isRunning = session.isRunning
         publishStatus()
@@ -743,8 +809,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         applyCaptureExtras()
         applyLogVideo()
         applyProRAW()
-        presetDolly()
-        applyDolly()
+        glide.stop()
+        presetMove()
+        applyMove()
         PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
     }
 

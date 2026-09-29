@@ -73,6 +73,17 @@ enum FrameImageMaker {
         return shiftedToOrigin(image.oriented(orientation))
     }
 
+    /// `rect` of `image`, scaled up to fill `image`'s own extent, so the frame keeps its size.
+    static func cut(_ image: CIImage, to rect: CGRect) -> CIImage {
+        let extent = image.extent
+        guard rect.width > 1, rect.height > 1 else { return image }
+        let fill = CGAffineTransform(translationX: -rect.minX, y: -rect.minY)
+            .concatenating(CGAffineTransform(scaleX: extent.width / rect.width, y: extent.height / rect.height))
+            .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY))
+        // Clamped first, so the edges of the cut sample picture rather than transparency.
+        return image.clampedToExtent().transformed(by: fill).cropped(to: extent)
+    }
+
     static func scaledForPreview(_ image: CIImage) -> CIImage {
         let extent = image.extent
         let longEdge = max(extent.width, extent.height)

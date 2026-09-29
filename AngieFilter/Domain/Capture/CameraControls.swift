@@ -94,21 +94,41 @@ enum VideoFrameRate: Int, Sendable {
     var next: VideoFrameRate { self == .thirty ? .twentyFour : .thirty }
 }
 
-/// Which way the phone moves during a 希区柯克 take. The zoom starts where the move has room and only goes one way.
-enum DollyDirection: String, CaseIterable, Identifiable, Sendable {
-    /// Away from the face: starts at the lens's widest and zooms in.
-    case away = "向后走"
-    /// Toward the face: starts zoomed in and zooms out.
-    case toward = "向前走"
+/// 运镜: what the zoom does during a single-camera take. Each starts where the move has room and only goes one way.
+enum CameraMove: String, CaseIterable, Identifiable, Sendable {
+    /// 希区柯克, walking away from the face: starts at the lens's widest and zooms in.
+    case dollyAway
+    /// 希区柯克, walking toward the face: starts zoomed in and zooms out.
+    case dollyToward
+    /// Eases in on the middle of the frame over a few seconds.
+    case pushIn
+    /// Eases out to the widest over a few seconds.
+    case pullOut
 
     var id: Self { self }
 
-    var hint: String {
+    var title: String {
         switch self {
-        case .away: "向后走：从最广开始录，往后退时拉近"
-        case .toward: "向前走：从长焦开始录，往前走时拉远"
+        case .dollyAway: "向后走"
+        case .dollyToward: "向前走"
+        case .pushIn: "慢推"
+        case .pullOut: "慢拉"
         }
     }
+
+    var hint: String {
+        switch self {
+        case .dollyAway: "希区柯克·向后走：录制时往后退，人物大小不变"
+        case .dollyToward: "希区柯克·向前走：录制时往前走，人物大小不变"
+        case .pushIn: "慢推：开始录制后 6 秒推近到 2 倍"
+        case .pullOut: "慢拉：开始录制后 6 秒拉远到最广"
+        }
+    }
+
+    /// 希区柯克: the zoom follows the distance to the face.
+    var followsFace: Bool { self == .dollyAway || self == .dollyToward }
+
+    var zoomsIn: Bool { self == .dollyAway || self == .pushIn }
 }
 
 struct CameraStatus: Equatable, Sendable {

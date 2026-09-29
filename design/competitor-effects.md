@@ -122,7 +122,7 @@ Metal kernel 用 `MTL_COMPILER_FLAGS = -fcikernel`、`MTLLINKER_FLAGS = -cikerne
    - Mood：7 种混合方式，取景时半透明叠第一张。
 
    需要一个「拍两张」的拍摄状态。
-7. **希区柯克变焦。** DollyCam 用 Vision 跟踪人脸大小：`target = z0·(s0/均值)^2`，EMA α=0.04，每帧变化限幅 ±8%。等做录像时再做。
+7. **希区柯克变焦。** DollyCam 用 Vision 跟踪人脸大小：`target = z0·(s0/均值)^2`，EMA α=0.04，每帧变化限幅 ±8%。已做成录像里的运镜，改用「变焦 ÷ 人脸大小」量距离，另加慢推 / 慢拉和跟拍，见 [capture.md](capture.md) 的「运镜」。
 8. **快门震动。** NoBoring：
    - 按下：一次 transient，强度 1.144、锐度 1。
    - 松开：两次 transient，间隔 120 ms。

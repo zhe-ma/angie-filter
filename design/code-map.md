@@ -72,8 +72,11 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `CameraSessionController` | 配置相机会话，收预览帧和照片，回传状态 |
 | `DualSessionController` | 前后广角同时采集。模拟器上不启动 |
 | `ThumbnailFrameTap` | 有请求时把视频队列上的下一帧拷成宽 160 的位图给滤镜条，不拿相机缓冲 |
-| `FaceTracker` | 美颜的人脸检测。取景每秒最多 10 次，拷成小图后在自己的队列上跑 Vision；成片同步测一次。拷图和检测也给 `DollyZoom` 用 |
-| `DollyZoom` | 希区柯克变焦：由这一帧拍到时的变焦 ÷ 人脸大小得出距离，经 alpha-beta 滤波后算目标变焦，按 `DollyDirection` 只许单向变化，交给会话去 `ramp`。会话只在录制中启用它，起点焦段也由会话按方向设置 |
+| `FaceTracker` | 美颜的人脸检测。取景每秒最多 10 次，拷成小图后在自己的队列上跑 Vision；成片同步测一次。拷图和检测也给 `FaceWatch` 用 |
+| `FaceWatch` | 运镜跟的那张脸：录制中每帧在 `angie.follow` 上检测整幅画面，选定一张一直跟，结果交给 `DollyZoom` 和 `FaceFraming` |
+| `FaceFraming` | 跟拍：运镜开着时画面裁进 1.25 倍，录制中裁切框跟着人脸平移，保持开拍时的构图；`FrameImageMaker.cut` 把框放大回原尺寸 |
+| `DollyZoom` | 希区柯克变焦：由这一帧拍到时的变焦 ÷ 人脸大小得出距离，经 alpha-beta 滤波后算目标变焦，一条之内只许单向变化，交给会话去 `ramp`。会话只在录制中启用它 |
+| `ZoomGlide` | 慢推 / 慢拉：录制开始后按对数变焦走 smoothstep，6 秒从起点到终点，每 1/30 秒一步交给会话去 `ramp`。运镜的起点、终点和录完回到起点都由会话按 `CameraMove` 设置 |
 | `PhotoOrientation` | 照片连接设成竖拍、不镜像，读图时按 EXIF 转正 |
 | `ZoomLadderBuilder` | 从当前设备读出实体镜头档和推荐焦段，换算等效焦段 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色；美颜打开时在调色前后接上 `SkinRetouch` |

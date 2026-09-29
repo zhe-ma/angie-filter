@@ -191,14 +191,18 @@ struct CameraView: View {
     }
 
     private var shootDeck: some View {
-        VStack(spacing: model.dualOn ? 10 : 16) {
+        let strengthShown = !model.beautyOpen && model.moveOpen && model.moveAvailable && model.move.followsFace
+        return VStack(spacing: model.dualOn || strengthShown ? 10 : 16) {
             if model.dualOn {
                 dualRow
             }
             if model.beautyOpen {
                 beautyRow
-            } else if model.dollyOpen, model.dollyAvailable {
-                dollyRow
+            } else if model.moveOpen, model.moveAvailable {
+                moveRow
+                if strengthShown {
+                    dollyStrengthRow
+                }
             } else if model.dualOn, model.dualLayout == .blend {
                 veilRow
             } else {
@@ -207,25 +211,60 @@ struct CameraView: View {
             toolTray
         }
         .animation(.easeOut(duration: 0.15), value: model.beautyOpen)
-        .animation(.easeOut(duration: 0.15), value: model.dollyOpen)
+        .animation(.easeOut(duration: 0.15), value: model.moveOpen)
+        .animation(.easeOut(duration: 0.15), value: model.move)
     }
 
-    /// Which way the take walks, which also sets the zoom it starts at; 关闭 turns 希区柯克 off and hides the row.
-    private var dollyRow: some View {
+    /// 希区柯克 strength as a percent: 100 holds the face's size. Double-tap the number for 100.
+    private var dollyStrengthRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "person.and.background.dotted")
+            Text("强度")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(CameraPalette.secondary)
+                .upright(model.iconAngle)
+            Slider(
+                value: Binding(
+                    get: { Double(model.dollyStrength) },
+                    set: { model.setDollyStrength(Float($0)) }
+                ),
+                in: Double(CameraViewModel.dollyStrengthRange.lowerBound)...Double(CameraViewModel.dollyStrengthRange.upperBound)
+            )
+            .tint(.white)
+            Text("\(Int((model.dollyStrength * 100).rounded()))%")
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(abs(model.dollyStrength - 1) < 0.001 ? Color.white : CameraPalette.accent)
+                .frame(width: 40, alignment: .trailing)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2, perform: model.resetDollyStrength)
+        }
+        .frame(height: 32)
+        .padding(.horizontal, 28)
+        .transition(.opacity)
+    }
+
+    /// 希区柯克's two walks, then the two glides; picking one also sets the zoom the take starts at.
+    /// 关闭 turns 运镜 off and hides the row.
+    private var moveRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: moveSymbol(model.move))
                 .font(.system(size: 13))
                 .foregroundStyle(CameraPalette.secondary)
                 .upright(model.iconAngle)
-            HStack(spacing: 4) {
-                ForEach(DollyDirection.allCases) { direction in
-                    tab(direction.rawValue, selected: model.dollyDirection == direction) {
-                        model.setDollyDirection(direction)
+            HStack(spacing: 2) {
+                ForEach(CameraMove.allCases) { move in
+                    if move == .pushIn {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.25))
+                            .frame(width: 1, height: 14)
+                            .padding(.horizontal, 4)
+                    }
+                    tab(move.title, selected: model.move == move) {
+                        model.setMove(move)
                     }
                 }
             }
             Spacer(minLength: 0)
-            Button("关闭") { model.setDollyOn(false); model.dismissPanels() }
+            Button("关闭") { model.setMoveOn(false); model.dismissPanels() }
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(CameraPalette.secondary)
                 .buttonStyle(.plain)
@@ -318,8 +357,8 @@ struct CameraView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                if model.dollyAvailable {
-                    trayButton("person.and.background.dotted", on: model.dollyOn, action: model.tapDolly)
+                if model.moveAvailable {
+                    trayButton(moveSymbol(model.move), on: model.moveOn, action: model.tapMove)
                         .lockedWhileRecording(model.isRecording)
                 }
             } else {
@@ -364,6 +403,14 @@ struct CameraView: View {
     /// Video mode carries one more button, the 希区柯克 toggle, in the same width.
     private var trayItemWidth: CGFloat {
         model.mode == .video ? 42 : 44
+    }
+
+    private func moveSymbol(_ move: CameraMove) -> String {
+        switch move {
+        case .dollyAway, .dollyToward: "person.and.background.dotted"
+        case .pushIn: "plus.magnifyingglass"
+        case .pullOut: "minus.magnifyingglass"
+        }
     }
 
     private func trayButton(_ symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
