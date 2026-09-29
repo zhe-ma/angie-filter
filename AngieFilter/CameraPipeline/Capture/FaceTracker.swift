@@ -87,7 +87,7 @@ final class FaceTracker: @unchecked Sendable {
         )
     }
 
-    private static func detect(_ buffer: CVPixelBuffer) -> [FaceRegion] {
+    static func detect(_ buffer: CVPixelBuffer) -> [FaceRegion] {
         let request = VNDetectFaceRectanglesRequest()
         do {
             try VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform([request])
@@ -100,7 +100,7 @@ final class FaceTracker: @unchecked Sendable {
     }
 
     /// The frame at detection size in a buffer of its own, with the same framing, so normalized boxes carry over.
-    private static func copy(_ image: CIImage) -> CVPixelBuffer? {
+    static func copy(_ image: CIImage) -> CVPixelBuffer? {
         let extent = image.extent
         let long = max(extent.width, extent.height)
         guard long > 1 else { return nil }

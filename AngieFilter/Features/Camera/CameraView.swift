@@ -275,7 +275,7 @@ struct CameraView: View {
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         .foregroundStyle(model.frameRate == .twentyFour ? CameraPalette.accent : Color.white)
                         .upright(model.iconAngle)
-                        .frame(width: 44, height: 44)
+                        .frame(width: trayItemWidth, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -289,6 +289,9 @@ struct CameraView: View {
                             .offset(y: -3)
                             .allowsHitTesting(false)
                     }
+                }
+                if model.dollyAvailable {
+                    trayButton("person.and.background.dotted", on: model.dollyOn, action: model.toggleDolly)
                 }
             } else {
                 trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",
@@ -329,13 +332,18 @@ struct CameraView: View {
         .background(CameraPalette.tray, in: Capsule())
     }
 
+    /// Video mode carries one more button, the 希区柯克 toggle, in the same width.
+    private var trayItemWidth: CGFloat {
+        model.mode == .video ? 42 : 44
+    }
+
     private func trayButton(_ symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(on ? CameraPalette.accent : Color.white)
                 .upright(model.iconAngle)
-                .frame(width: 44, height: 44)
+                .frame(width: trayItemWidth, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

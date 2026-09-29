@@ -219,7 +219,7 @@ flowchart LR
 
 不用 actor 包住 `AVCaptureSession`。会话回调留在它自己的队列上。`onStatus`、`onPhoto`、`onFailure` 都回到主队列。
 
-预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。双摄用自己的 `angie.camera.dual.session`、`angie.camera.dual.video` 和 `angie.camera.dual.photo`。美颜的人脸检测在 `FaceTracker` 自己的 `angie.faces` 上，视频队列只把帧拷成小图交过去，取景用的是上一次检测的结果。合成忙时合并成下一次绘制，不让后置的忙挡住前置更新最近一帧。两套会话不同时 `startRunning`。
+预览忙时，`CameraSessionController` 在视频队列上占住 `renderBusy`，这一帧还没画完就不再建下一帧的图。画完再放开。视频输出同时 `alwaysDiscardsLateVideoFrames = true`。双摄用自己的 `angie.camera.dual.session`、`angie.camera.dual.video` 和 `angie.camera.dual.photo`。美颜的人脸检测在 `FaceTracker` 自己的 `angie.faces` 上，视频队列只把帧拷成小图交过去，取景用的是上一次检测的结果。希区柯克变焦的检测在 `DollyZoom` 的 `angie.dolly` 上，每帧都测，上一帧没测完就跳过；算出的变焦回到会话队列去 `ramp`。合成忙时合并成下一次绘制，不让后置的忙挡住前置更新最近一帧。两套会话不同时 `startRunning`。
 
 ## 命名
 

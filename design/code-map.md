@@ -72,7 +72,8 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `CameraSessionController` | 配置相机会话，收预览帧和照片，回传状态 |
 | `DualSessionController` | 前后广角同时采集。模拟器上不启动 |
 | `ThumbnailFrameTap` | 有请求时把视频队列上的下一帧拷成宽 160 的位图给滤镜条，不拿相机缓冲 |
-| `FaceTracker` | 美颜的人脸检测。取景每秒最多 10 次，拷成小图后在自己的队列上跑 Vision；成片同步测一次 |
+| `FaceTracker` | 美颜的人脸检测。取景每秒最多 10 次，拷成小图后在自己的队列上跑 Vision；成片同步测一次。拷图和检测也给 `DollyZoom` 用 |
+| `DollyZoom` | 希区柯克变焦：由这一帧拍到时的变焦 ÷ 人脸大小得出距离，经 alpha-beta 滤波后算目标变焦，交给会话去 `ramp` |
 | `PhotoOrientation` | 照片连接设成竖拍、不镜像，读图时按 EXIF 转正 |
 | `ZoomLadderBuilder` | 从当前设备读出实体镜头档和推荐焦段，换算等效焦段 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色；美颜打开时在调色前后接上 `SkinRetouch` |

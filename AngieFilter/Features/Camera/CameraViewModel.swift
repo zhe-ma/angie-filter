@@ -97,6 +97,8 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var reviewLive: LiveReview = .none
     @Published var isSaving = false
     @Published private(set) var liveWanted = UserDefaults.standard.bool(forKey: CameraViewModel.liveKey)
+    /// 希区柯克变焦, offered in single-camera video mode. Not kept across launches.
+    @Published private(set) var dollyOn = false
     @Published private(set) var beautyOn = UserDefaults.standard.bool(forKey: CameraViewModel.beautyKey)
     /// Kept while 美颜 is off, so turning it back on returns to the same strength.
     @Published private(set) var beautyAmount = UserDefaults.standard.object(forKey: CameraViewModel.beautyAmountKey) as? Float
@@ -635,6 +637,19 @@ final class CameraViewModel: ObservableObject {
         mode = next
         session.setVideoMode(next == .video)
         dualSession.setVideoMode(next == .video)
+    }
+
+    var dollyAvailable: Bool {
+        mode == .video && !dualOn
+    }
+
+    /// The zoom follows the distance to the face, so it keeps its size while the phone moves. A take, a zoom stop,
+    /// or a pinch starts over from the size then. Walking toward the face needs a longer focal length to zoom out from.
+    func toggleDolly() {
+        guard dollyAvailable else { return }
+        dollyOn.toggle()
+        session.setDollyZoom(dollyOn)
+        flashBanner(dollyOn ? "希区柯克：前后走，人物大小不变" : "希区柯克已关闭")
     }
 
     func toggleFrameRate() {
