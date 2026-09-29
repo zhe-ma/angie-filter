@@ -754,7 +754,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             source = FrameImageMaker.motionBlurred(source, length: whip.length, angle: whip.angle)
             scene = scene.map { FrameImageMaker.motionBlurred($0, length: whip.length, angle: whip.angle) }
         }
-        if cut != nil, options.backgroundBlur, let mask = people.mask(offering: source) {
+        // 运镜's 虚化 steps aside for 模糊, so the background isn't blurred twice.
+        let zoomBlurs = cut != nil && options.backgroundBlur && !renderParameters.blur.on
+        let peopleMask = renderParameters.wantsPeople || zoomBlurs ? people.mask(offering: source) : nil
+        if zoomBlurs, let mask = peopleMask {
             let radius = backgroundBlurRadius(width: source.extent.width)
             source = FrameImageMaker.backgroundBlurred(source, people: mask, radius: radius)
             scene = scene.map { FrameImageMaker.backgroundBlurred($0, people: mask, radius: radius) }
@@ -762,9 +765,9 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         thumbnailTap.offer(source)
         let faces = renderParameters.beauty > 0 ? faceTracker.faces(offering: source) : []
         let flash = sinceHit.map(ImpactShake.flash(after:)) ?? 0
-        let graded = held(FrameImageMaker.flashed(FrameImageMaker.graded(source, scene: scene, faces: faces,
-                                                                         parameters: renderParameters), amount: flash),
-                          shot: shot)
+        let look = FrameImageMaker.graded(source, scene: scene, faces: faces,
+                                          people: renderParameters.wantsPeople ? peopleMask : nil, parameters: renderParameters)
+        let graded = held(FrameImageMaker.flashed(look, amount: flash), shot: shot)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         previewView.draw(image: framed, token: previewToken.with { $0 })
         if let active = recorder.with({ $0 }) {
@@ -995,7 +998,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
                     identifier: identifier,
                     stillTime: movie.stillTime
                 ) { [weak self] frame in
-                    self?.stillPipeline(frame, faces: faces, parameters: parameters) ?? frame
+                    self?.stillPipeline(frame, faces: faces, parameters: parameters, accuratePeople: false) ?? frame
                 }
                 try? FileManager.default.removeItem(at: movie.url)
                 PerfLog.line("live movie rendered in \(Int(PerfLog.ms(since: start)))ms")
@@ -1021,10 +1024,13 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     /// The still's steps from an upright, unmirrored image: mirror and crop, grade, turn for the hold, frame.
     /// `scene` is the same shot in scene light, cut the same way. `faces` are normalized to the cut image;
     /// a Live Photo's movie frames reuse its still's.
-    private func stillPipeline(_ image: CIImage, scene: CIImage? = nil, faces: [FaceRegion], parameters: RenderParameters) -> CIImage {
+    /// 模糊 with 抠人 finds the people in each image: accurately for a still, at balanced quality for a movie frame.
+    private func stillPipeline(_ image: CIImage, scene: CIImage? = nil, faces: [FaceRegion], parameters: RenderParameters,
+                               accuratePeople: Bool = true) -> CIImage {
         let source = FrameImageMaker.sourceImage(from: image, parameters: parameters)
         let sceneSource = scene.map { FrameImageMaker.sourceImage(from: $0, parameters: parameters) }
-        let graded = FrameImageMaker.graded(source, scene: sceneSource, faces: faces, parameters: parameters)
+        let people = parameters.wantsPeople ? PersonMask.mask(in: source, accurate: accuratePeople) : nil
+        let graded = FrameImageMaker.graded(source, scene: sceneSource, faces: faces, people: people, parameters: parameters)
         let turned = FrameImageMaker.turned(graded, hold: parameters.hold)
         return framedImage(turned, parameters: parameters, synchronousCaption: true)
     }

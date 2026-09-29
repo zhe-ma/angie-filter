@@ -17,6 +17,7 @@ struct CameraView: View {
     @AppStorage("viewfinder.grid") private var showsGrid = false
     @AppStorage("viewfinder.level") private var showsLevel = true
     @State private var adjustKey = AdjustKey.intensity
+    @State private var blurPart = BlurSettings.Part.background
     @State private var shutterTaps = 0
     @State private var paneHighlight = false
     @State private var paneHighlightToken = 0
@@ -199,6 +200,7 @@ struct CameraView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.18), value: deckMode)
         .animation(.easeInOut(duration: 0.18), value: model.adjustOpen)
+        .animation(.easeInOut(duration: 0.18), value: model.blurOpen)
     }
 
     private var shootDeck: some View {
@@ -538,7 +540,7 @@ struct CameraView: View {
                 if model.dualOn {
                     cameraSegment
                 } else {
-                    Text(model.selectedLook.name)
+                    Text(model.selectedLook.name + (model.blur.shows ? " + 模糊" : ""))
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                 }
@@ -548,6 +550,15 @@ struct CameraView: View {
                         .foregroundStyle(CameraPalette.secondary)
                 }
                 Spacer()
+                Button(action: model.toggleBlurPanel) {
+                    Label(model.blurOpen ? "收起" : "模糊", systemImage: "drop.halffull")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(model.blurOpen ? Color.black : model.blur.shows ? CameraPalette.accent : Color.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(model.blurOpen ? Color.white : CameraPalette.tray, in: Capsule())
+                }
+                .buttonStyle(.plain)
                 if !model.selectedLook.isOriginal {
                     Button(action: model.toggleAdjust) {
                         Label(model.adjustOpen ? "收起" : "调节", systemImage: "slider.horizontal.3")
@@ -562,7 +573,11 @@ struct CameraView: View {
             }
             .frame(height: 28)
             .padding(.horizontal, 16)
-            if model.adjustOpen, !model.selectedLook.isOriginal {
+            if model.blurOpen {
+                blurPanel
+                    .frame(maxHeight: .infinity)
+                    .transition(.opacity)
+            } else if model.adjustOpen, !model.selectedLook.isOriginal {
                 adjustPanel
                     .frame(maxHeight: .infinity)
                     .transition(.opacity)
@@ -619,6 +634,54 @@ struct CameraView: View {
 
     private var activeAdjustKey: AdjustKey {
         adjustKeys.contains(adjustKey) ? adjustKey : .intensity
+    }
+
+    /// 模糊 over the look: 整体 or 抠人, then one slider, for 抠人 the background's or the people's as picked.
+    private var blurPanel: some View {
+        let blur = model.blur
+        let parts: [BlurSettings.Part] = blur.mode == .whole ? [.whole] : [.background, .people]
+        let part = parts.contains(blurPart) ? blurPart : parts[0]
+        let value = blur[part]
+        return VStack(spacing: 12) {
+            HStack(spacing: 4) {
+                tab("整体", selected: blur.mode == .whole) { model.setBlurMode(.whole) }
+                tab("抠人", selected: blur.mode == .people) { model.setBlurMode(.people) }
+                if parts.count > 1 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 1, height: 14)
+                        .padding(.horizontal, 6)
+                    ForEach(parts) { item in
+                        tab(item.title, selected: item == part) { blurPart = item }
+                    }
+                }
+            }
+            HStack(spacing: 12) {
+                Slider(
+                    value: Binding(get: { Double(value) }, set: { model.setBlur(part, to: Float($0)) }),
+                    in: 0...1
+                )
+                .tint(.white)
+                Text("\(Int((value * 100).rounded()))")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .frame(width: 32, alignment: .trailing)
+            }
+            .padding(.horizontal, 24)
+            HStack {
+                Button("关闭模糊", action: model.turnBlurOff)
+                    .font(.system(size: 13))
+                    .foregroundStyle(CameraPalette.secondary)
+                Spacer()
+                Button("完成", action: model.closeBlurPanel)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 16)
+                    .frame(height: 28)
+                    .background(Color.white, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+        }
     }
 
     /// One parameter at a time: pick it, then drag the single slider.

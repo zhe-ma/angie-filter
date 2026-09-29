@@ -92,6 +92,32 @@ final class CameraViewModel: ObservableObject {
     private static let crashFreezeKey = "capture.crashFreeze"
     private static let backgroundBlurKey = "capture.backgroundBlur"
 
+    private static let blurOnKey = "capture.blur.on"
+    private static let blurModeKey = "capture.blur.mode"
+    private static let blurWholeKey = "capture.blur.whole"
+    private static let blurBackgroundKey = "capture.blur.background"
+    private static let blurPeopleKey = "capture.blur.people"
+
+    private static func savedBlur() -> BlurSettings {
+        let defaults = UserDefaults.standard
+        var blur = BlurSettings()
+        blur.on = defaults.bool(forKey: blurOnKey)
+        blur.mode = defaults.string(forKey: blurModeKey).flatMap(BlurSettings.Mode.init(rawValue:)) ?? blur.mode
+        blur.whole = defaults.object(forKey: blurWholeKey) as? Float ?? blur.whole
+        blur.background = defaults.object(forKey: blurBackgroundKey) as? Float ?? blur.background
+        blur.people = defaults.object(forKey: blurPeopleKey) as? Float ?? blur.people
+        return blur
+    }
+
+    private func saveBlur() {
+        let defaults = UserDefaults.standard
+        defaults.set(blur.on, forKey: Self.blurOnKey)
+        defaults.set(blur.mode.rawValue, forKey: Self.blurModeKey)
+        defaults.set(blur.whole, forKey: Self.blurWholeKey)
+        defaults.set(blur.background, forKey: Self.blurBackgroundKey)
+        defaults.set(blur.people, forKey: Self.blurPeopleKey)
+    }
+
     private static func savedMoveOptions() -> MoveOptions {
         let defaults = UserDefaults.standard
         var options = MoveOptions()
@@ -129,6 +155,10 @@ final class CameraViewModel: ObservableObject {
     @Published var aspectRatio: AspectRatio = .threeFour
     @Published var lookID = Look.originalID
     @Published var adjustOpen = false
+    /// 模糊 over whatever look, the same for both cameras; kept on the phone.
+    @Published private(set) var blur = CameraViewModel.savedBlur()
+    /// The 模糊 panel, in place of the families and thumbnails, like 调节.
+    @Published private(set) var blurOpen = false
     @Published var draft = LookAdjustment()
     @Published var adjustmentNotice: String?
     @Published var filtersOpen = false
@@ -463,8 +493,48 @@ final class CameraViewModel: ObservableObject {
         syncParameters()
     }
 
+    /// Opening the panel turns 模糊 on, so the slider shows at once; 关闭模糊 turns it off.
+    func toggleBlurPanel() {
+        if blurOpen {
+            blurOpen = false
+            return
+        }
+        adjustOpen = false
+        blurOpen = true
+        if !blur.on {
+            changeBlur { $0.on = true }
+        }
+    }
+
+    func closeBlurPanel() {
+        blurOpen = false
+    }
+
+    func turnBlurOff() {
+        blurOpen = false
+        changeBlur { $0.on = false }
+    }
+
+    func setBlurMode(_ mode: BlurSettings.Mode) {
+        changeBlur { $0.mode = mode }
+    }
+
+    func setBlur(_ part: BlurSettings.Part, to value: Float) {
+        changeBlur { $0[part] = value }
+    }
+
+    private func changeBlur(_ body: (inout BlurSettings) -> Void) {
+        var next = blur
+        body(&next)
+        guard next != blur else { return }
+        blur = next
+        saveBlur()
+        syncParameters()
+    }
+
     func toggleAdjust() {
         guard !selectedLook.isOriginal else { return }
+        blurOpen = false
         if adjustOpen {
             adjustOpen = false
         } else {
@@ -521,6 +591,7 @@ final class CameraViewModel: ObservableObject {
     func closeFilters() {
         filtersOpen = false
         adjustOpen = false
+        blurOpen = false
         resetThumbnails()
     }
 
@@ -1009,6 +1080,7 @@ final class CameraViewModel: ObservableObject {
             let framed = frame
             let date = previewDate
             let place = placeText
+            let blur = blur
             dualSession.updateRenderParameters { parameters in
                 parameters.aspectRatio = aspect
                 parameters.frame = framed
@@ -1017,6 +1089,7 @@ final class CameraViewModel: ObservableObject {
                 parameters.hold = hold
                 parameters.beauty = beauty
                 parameters.dual = settings
+                parameters.blur = blur
             }
         } else {
             let aspect = aspectRatio
@@ -1032,6 +1105,7 @@ final class CameraViewModel: ObservableObject {
                 parameters.hold = hold
                 parameters.beauty = beauty
                 parameters.dual = nil
+                parameters.blur = blur
             }
         }
     }

@@ -274,6 +274,28 @@ float4 skinFinish(sample_t color, sample_t average, sample_t mask, float evennes
     return float4(even + (1.0 - clamp(even, 0.0, 1.0)) * m * glow, color.a);
 }
 
+// 模糊's 抠人: the picture with the people weighted out, the weight carried as alpha, so a blur of it divided by
+// its alpha is the background alone, without the people's color smearing out around them.
+float4 peopleOut(sample_t image, sample_t people) {
+    float weight = 1.0 - clamp(people.r, 0.0, 1.0);
+    return float4(image.rgb * weight, weight);
+}
+
+// The same with the background weighted out, for blurring the people alone.
+float4 peopleIn(sample_t image, sample_t people) {
+    float weight = clamp(people.r, 0.0, 1.0);
+    return float4(image.rgb * weight, weight);
+}
+
+// The people laid over the background. Either may be a weighted blur, divided back by its alpha here, or the
+// sharp picture, whose alpha is 1. Where one side has nothing to average, deep inside a person or far out in the
+// background, the other side covers it anyway.
+float4 peopleOver(sample_t front, sample_t behind, sample_t people) {
+    float3 person = front.a > 0.002 ? front.rgb / front.a : behind.rgb / max(behind.a, 0.002);
+    float3 background = behind.a > 0.002 ? behind.rgb / behind.a : person;
+    return float4(mix(background, person, clamp(people.r, 0.0, 1.0)), 1.0);
+}
+
 // 运镜 zoom blur: the picture as if the zoom moved while the shutter was open. Zooming in by `spread` during the
 // exposure moves every point outward, so each pixel averages what lay between it and 1 − spread of the way from the
 // center; a negative spread is zooming out and reaches outward instead.

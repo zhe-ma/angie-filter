@@ -31,6 +31,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let latest = Locked<[CameraFacing: CIImage]>([:])
     private let thumbnailTaps: [CameraFacing: ThumbnailFrameTap] = [.back: ThumbnailFrameTap(), .front: ThumbnailFrameTap()]
     private let faceTrackers: [CameraFacing: FaceTracker] = [.back: FaceTracker(), .front: FaceTracker()]
+    private let personMasks: [CameraFacing: PersonMask] = [.back: PersonMask(), .front: PersonMask()]
     private let imageAspect = Locked<[CameraFacing: CGFloat]>([:])
     private let selected = Locked(CameraFacing.back)
     private let flashMode = Locked(FlashMode.off)
@@ -401,9 +402,9 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         )
         let beauty = capture.parameters.beauty > 0
         let gradedBack = grade(back, facing: .back, parameters: capture.parameters, settings: settings,
-                               faces: beauty ? FaceTracker.detect(in: back) : [])
+                               faces: beauty ? FaceTracker.detect(in: back) : [], still: true)
         let gradedFront = grade(front, facing: .front, parameters: capture.parameters, settings: settings,
-                                faces: beauty ? FaceTracker.detect(in: front) : [])
+                                faces: beauty ? FaceTracker.detect(in: front) : [], still: true)
         let composed = DualFrameComposer.compose(back: gradedBack, front: gradedFront, settings: settings, canvas: canvas)
         let turned = FrameImageMaker.turned(composed, hold: capture.parameters.hold)
         let framed = framedImage(turned, parameters: capture.parameters, synchronousCaption: true)
@@ -528,11 +529,17 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
     }
 
-    private func grade(_ image: CIImage, facing: CameraFacing, parameters: RenderParameters, settings: DualSettings, faces: [FaceRegion]) -> CIImage {
+    /// A still finds the people in its lane at once; the preview takes the lane's latest mask.
+    private func grade(_ image: CIImage, facing: CameraFacing, parameters: RenderParameters, settings: DualSettings,
+                       faces: [FaceRegion], still: Bool = false) -> CIImage {
         var lane = parameters
         lane.lookID = settings.lookID(for: facing)
         lane.adjustment = settings.adjustment(for: facing)
-        return FrameImageMaker.graded(image, faces: faces, parameters: lane)
+        var people: CIImage?
+        if lane.wantsPeople {
+            people = still ? PersonMask.mask(in: image, accurate: true) : personMasks[facing]?.mask(offering: image)
+        }
+        return FrameImageMaker.graded(image, faces: faces, people: people, parameters: lane)
     }
 
     private func previewFaces(_ image: CIImage, facing: CameraFacing, parameters: RenderParameters) -> [FaceRegion] {

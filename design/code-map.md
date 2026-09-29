@@ -53,7 +53,8 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `LookFamily` | 一个分类，成员是 `Look` |
 | `LookLibrary` | 读 `Looks.json`，再接上 `LabLooks.json` 和 `ScreenLooks.json` |
 | `LookAdjustment` | 这一次打开里改过的强度、褪色、柔光、光晕、颗粒和暗角 |
-| `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量、美颜、双摄排列 |
+| `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量、美颜、双摄排列、模糊层 |
+| `BlurSettings` | 模糊层：开关、整体或抠人、整体 / 背景 / 人物三个强度 |
 | `FaceRegion` | 一张脸的归一化框和 roll，以及美颜用的椭圆 |
 | `DualLayout` | 上下、左右、画中画、圆窗、叠加 |
 | `PipCorner` | 小窗没被拖开时贴住的角 |
@@ -77,7 +78,8 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `ThumbnailFrameTap` | 有请求时把视频队列上的下一帧拷成宽 160 的位图给滤镜条，不拿相机缓冲 |
 | `FaceTracker` | 美颜的人脸检测。取景每秒最多 10 次，拷成小图后在自己的队列上跑 Vision；成片同步测一次。拷图和检测也给 `FaceWatch` 用 |
 | `FaceWatch` | 运镜跟的人：录制中每帧在 `angie.follow` 上检测整幅画面，选定一张脸一直跟，没脸时认上半身，点选时跟点中的脸、人体或用 Vision 跟住那块地方；结果交给 `DollyZoom`（只要脸）和 `FaceFraming` |
-| `PersonMask` | 虚化的人像遮罩：在 `angie.segment` 上跑人像分割，取景拿最新一张 |
+| `PersonMask` | 人像遮罩：在 `angie.segment` 上跑人像分割，取景拿最新一张，给运镜的虚化和模糊层的抠人；照片和实况帧同步分割 |
+| `BlurLayer` | 模糊层：调色前的 `CIGaussianBlur`，整体一个强度，抠人时背景、人物各自按权重模糊再叠起来 |
 | `ImpactShake` | 冲击：裁切框的猛推、抖动和白光随时间的量 |
 | `FaceFraming` | 跟拍：运镜开着时画面裁进 1.25 倍，录制中裁切框跟着人脸平移，保持开拍时的构图；叠上锁平的角度和手持感的飘动，角度优先、平移让路，输出 `FrameCut` |
 | `FrameCut` | 裁切框：中心、大小、角度；算把框放大回整幅的变换、转过某角时占的范围、最多能转多少 |

@@ -24,9 +24,17 @@ enum FrameImageMaker {
         prepared(geometry(photoImage, parameters: parameters), quality: parameters.quality)
     }
 
-    /// `faces` are normalized to `source`; with 美颜 on they are retouched around the look.
-    static func graded(_ source: CIImage, scene: CIImage? = nil, faces: [FaceRegion] = [], parameters: RenderParameters) -> CIImage {
+    /// `faces` are normalized to `source`; with 美颜 on they are retouched around the look. `people` is white on
+    /// people, scaled to `source`, for 模糊's 抠人. 模糊 comes first, in the light the camera saw, so the look's
+    /// color, grain and vignette lie evenly over it as on film behind a lens. The filter strip shows the look alone.
+    static func graded(_ source: CIImage, scene: CIImage? = nil, faces: [FaceRegion] = [], people: CIImage? = nil,
+                       parameters: RenderParameters) -> CIImage {
         let look = LookLibrary.look(id: parameters.lookID)
+        var source = source
+        var scene = scene
+        if parameters.quality != .thumbnail, parameters.blur.shows {
+            (source, scene) = BlurLayer.apply(source, scene: scene, people: people, settings: parameters.blur)
+        }
         guard parameters.quality != .thumbnail,
               let retouch = SkinRetouch(source: source, faces: faces, amount: parameters.beauty) else {
             return GradeApplicator.apply(source, scene: scene, look: look, adjustment: parameters.adjustment, quality: parameters.quality)

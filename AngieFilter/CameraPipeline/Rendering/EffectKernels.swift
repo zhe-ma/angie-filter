@@ -25,6 +25,9 @@ enum EffectKernels {
     static let skinChromaPack = color("skinChromaPack")
     static let skinFinish = color("skinFinish")
     static let zoomBlur = general("zoomBlur")
+    static let peopleOut = color("peopleOut")
+    static let peopleIn = color("peopleIn")
+    static let peopleOver = color("peopleOver")
 
     private static let library: Data? = {
         guard let url = Bundle.main.url(forResource: "default", withExtension: "metallib") else {
