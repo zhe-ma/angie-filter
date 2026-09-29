@@ -8,7 +8,8 @@ enum DualStartOutcome: Equatable {
     case unavailable(String)
 }
 
-final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
+final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
+    AVCaptureAudioDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
     static var isSupported: Bool {
         AVCaptureMultiCamSession.isMultiCamSupported
     }
@@ -47,6 +48,15 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private var startID = 0
     private var wantsRunning = false
     private var activeStart: (id: Int, completion: (DualStartOutcome) -> Void)?
+    private var videoMode = false
+    private var audioInput: AVCaptureDeviceInput?
+    private let audioOutput = AVCaptureAudioDataOutput()
+    private let audioQueue = DispatchQueue(label: "angie.camera.dual.audio")
+    private let recorder = Locked<VideoRecorder?>(nil)
+    private let recordingHold = Locked(HoldOrientation.portrait)
+    /// The composite is recorded on the back camera's clock, one frame per back frame.
+    private let backFrameTime = Locked(CMTime.negativeInfinity)
+    private let recordedTime = Locked(CMTime.negativeInfinity)
 
     init(previewView: PreviewMetalView) {
         self.previewView = previewView
@@ -175,6 +185,49 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
     }
 
+    func setVideoMode(_ on: Bool) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.videoMode = on
+            guard on, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
+                self.applyAudio()
+                return
+            }
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+                self?.sessionQueue.async { self?.applyAudio() }
+            }
+        }
+    }
+
+    func startRecording(to url: URL) {
+        let hold = parameters.with { $0.hold }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let sound = self.audioInput != nil
+                ? self.audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mov)
+                : nil
+            self.recordingHold.with { $0 = hold }
+            self.recordedTime.with { $0 = .negativeInfinity }
+            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound) }
+        }
+    }
+
+    func stopRecording(_ completion: @escaping (URL?) -> Void) {
+        sessionQueue.async { [weak self] in
+            let active = self?.recorder.with { recorder -> VideoRecorder? in
+                defer { recorder = nil }
+                return recorder
+            }
+            guard let active else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            active.finish { url in
+                DispatchQueue.main.async { completion(url) }
+            }
+        }
+    }
+
     func setFlash(_ mode: FlashMode) {
         flashMode.with { $0 = mode }
         sessionQueue.async { [weak self] in
@@ -212,8 +265,15 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        if output === audioOutput {
+            recorder.with { $0 }?.appendAudio(sampleBuffer)
+            return
+        }
         let facing: CameraFacing = output === frontVideoOutput ? .front : .back
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        if facing == .back {
+            backFrameTime.with { $0 = CMSampleBufferGetPresentationTimeStamp(sampleBuffer) }
+        }
         let image = FrameImageMaker.upright(
             from: pixelBuffer,
             orientation: facing == .front ? .leftMirrored : .right,
@@ -351,7 +411,67 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         let framed = framedImage(composed, parameters: renderParameters, synchronousCaption: false)
         let token = previewToken.with { $0 }
         previewView.draw(image: framed, token: token)
+        record(composed: composed, framed: framed, parameters: renderParameters)
         finishCompose()
+    }
+
+    /// At most one recorded frame per back-camera frame, however often the composite is redrawn.
+    private func record(composed: CIImage, framed: CIImage, parameters: RenderParameters) {
+        guard let active = recorder.with({ $0 }) else { return }
+        let time = backFrameTime.with { $0 }
+        let fresh = recordedTime.with { last -> Bool in
+            guard time > last else { return false }
+            last = time
+            return true
+        }
+        guard fresh else { return }
+        let hold = recordingHold.with { $0 }
+        let recorded = hold == .portrait
+            ? framed
+            : framedImage(FrameImageMaker.turned(composed, hold: hold), parameters: parameters, synchronousCaption: true)
+        active.appendVideo(recorded, at: time)
+    }
+
+    private func applyAudio() {
+        guard isConfigured else { return }
+        let wants = videoMode && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        guard wants != (audioInput != nil) else { return }
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        guard wants else {
+            for connection in session.connections where connection.output === audioOutput {
+                session.removeConnection(connection)
+            }
+            if let audioInput { session.removeInput(audioInput) }
+            session.removeOutput(audioOutput)
+            audioInput = nil
+            return
+        }
+        guard let microphone = AVCaptureDevice.default(for: .audio),
+              let input = try? AVCaptureDeviceInput(device: microphone),
+              session.canAddInput(input) else { return }
+        session.addInputWithNoConnections(input)
+        guard session.canAddOutput(audioOutput) else {
+            session.removeInput(input)
+            return
+        }
+        session.addOutputWithNoConnections(audioOutput)
+        audioOutput.setSampleBufferDelegate(self, queue: audioQueue)
+        let port = input.ports(for: .audio, sourceDeviceType: microphone.deviceType, sourceDevicePosition: .back).first
+            ?? input.ports.first { $0.mediaType == .audio }
+        guard let port else {
+            session.removeOutput(audioOutput)
+            session.removeInput(input)
+            return
+        }
+        let connection = AVCaptureConnection(inputPorts: [port], output: audioOutput)
+        guard session.canAddConnection(connection) else {
+            session.removeOutput(audioOutput)
+            session.removeInput(input)
+            return
+        }
+        session.addConnection(connection)
+        audioInput = input
     }
 
     private func finishCompose() {
@@ -481,6 +601,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
                 applyInitialZoom(on: pair.back)
                 applyInitialZoom(on: pair.front)
                 isConfigured = true
+                applyAudio()
                 return true
             }
         }
@@ -554,6 +675,7 @@ final class DualSessionController: NSObject, AVCaptureVideoDataOutputSampleBuffe
         for output in Array(session.outputs) {
             session.removeOutput(output)
         }
+        audioInput = nil
     }
 
     private func applyInitialZoom(on device: AVCaptureDevice) {

@@ -127,13 +127,13 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 - `NSCameraUsageDescription`
 - `NSPhotoLibraryAddUsageDescription`
 - `NSLocationWhenInUseUsageDescription`：地点只在相框打开地点开关时使用
-- `NSMicrophoneUsageDescription`：只在实况打开时录短视频的声音
+- `NSMicrophoneUsageDescription`：只在实况打开或录像模式里录声音
 
 ## Live Photo
 
 界面叫「实况」，工具行第二个按钮，开关记在 `UserDefaults` 的 `capture.live`，默认关。只在单摄：以 `AVCapturePhotoOutput.isLivePhotoCaptureSupported` 为准，双摄时按钮变灰。
 
-1. `CameraSessionController.applyLivePhoto` 在会话配好之后、`startRunning` 之前打开 `isLivePhotoCaptureEnabled`，换镜头后再设一次。开着实况且麦克风已授权时加一路音频输入，关掉就拿掉；没授权就录无声的。第一次打开实况时请求麦克风。
+1. `CameraSessionController.applyCaptureExtras` 在会话配好之后、`startRunning` 之前打开 `isLivePhotoCaptureEnabled`，换镜头后再设一次。开着实况且麦克风已授权时加一路音频输入，关掉就拿掉；没授权就录无声的。第一次打开实况时请求麦克风。
 2. 快门给 `livePhotoMovieFileURL`，按 `uniqueID` 记一条 `LiveShot`。静图和短视频到达的先后不定，两样都到了才开始处理。
 3. 静图照旧走 `stillPipeline`：镜像、裁切、调色、按拿法转正、套相框。确认页马上显示静图，角标「实况」转圈，保存按钮显示「实况处理中」。
 4. `LivePhotoMovieRenderer` 用 `AVAssetReader` 读出每帧，按轨道的 `preferredTransform` 转正（它按 y 朝下写，Core Image 是 y 朝上，要用翻转共轭），再过同一个 `stillPipeline`，用低优先级的 `CIContext` 渲进缓冲池，`AVAssetWriter` 写 HEVC，色彩标 P3。音轨原样拷。输出尺寸先拿一张同尺寸的空图过一遍管线量出来，取偶数。
@@ -147,9 +147,18 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 
 单摄继续用上面的 `AVCaptureSession` 和虚拟相机。点「双摄」后先停掉它，再启动 `AVCaptureMultiCamSession`。退出时反过来。预览视图不换。两路先各自调色，合成后再套相框。成片在双摄自己的 `CIContext` 里导出，不占用预览那一个 context。模拟器 `isMultiCamSupported` 为 false，工具行没有这个按钮。
 
-## 以后：录像
+## 录像
 
-下面是以后要做录像时的路线，现在的会话结构已经能接上。
+快门上方一行「照片 · 录像」切模式，选中的是黄色。单摄和双摄都能录，录下来的就是取景里调好色、带相框的画面，双摄是合成后的整张图。
+
+- 不用 `AVCaptureMovieFileOutput`，它写进去的是没调色的原始帧。`VideoRecorder` 接住每一帧画进取景的图，用自己的 `CIContext` 渲进 `AVAssetWriterInputPixelBufferAdaptor` 的缓冲池，`AVAssetWriter` 写 HEVC，色彩标 P3、传递函数 BT.709，码率按像素数算，最低 8Mbps。编码器忙时丢帧，不排队。
+- 尺寸就是取景帧的尺寸（长边 1920 以内），在第一帧到来时定下；所以录像时相框、画幅、双摄排列和单双摄切换都锁住变灰，滤镜和调节可以改。
+- 拿法在开录那一刻定下，整段不变。竖拿直接录取景那张图；横拿、倒拿先按成片同一条规则转正，再套相框，相框和字是横的。前置照旧是镜像。
+- 时间戳用采样缓冲自己的，写入从第一帧开始，之前的声音丢掉。双摄的合成图每来一路新帧就重画一次，录像按后置那一路的时间戳，每个后置帧最多记一帧。
+- 声音：录像模式下加麦克风输入和 `AVCaptureAudioDataOutput`，编码参数用 `recommendedAudioSettingsForAssetWriter`，AAC。第一次切到录像时请求麦克风，没授权就录无声的。单摄在录像模式里关掉实况。双摄用 `addInputWithNoConnections` 加麦克风，手动连到音频输出；`removeAll` 之后按模式重新加。两个会话各自记着模式，录像模式里切单双摄麦克风跟着走。
+- 录制中取景顶部居中显示红底计时。快门变红，录制中缩成红色圆角方块。离开前台时自动停。
+- 停下后进确认页：循环播放（带声音），重拍删掉临时文件，保存用 `PHAssetCreationRequest` 的 `.video` 资源。写失败时横幅「录像没有保存下来」。
+- 先录 SDR。HDR 以后单独做。
 
 为什么不用第三方相机库：
 
@@ -162,11 +171,4 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 
 第三方库都把会话握在自己手里。我们的预览要从视频输出拿帧、调色、画进 `CAMetalLayer`，双摄还要 `AVCaptureMultiCamSession`，这两件事它们都挡在中间。
 
-**录像。** 单摄和双摄都能做，录的是调好色、带相框的画面。
-
-- 不用 `AVCaptureMovieFileOutput`，它写进去的是没调色的原始帧。
-- 视频输出送来的帧照旧调色。预览那份收到 1920 以内；录像那份按录像分辨率，在自己的 `CIContext` 里渲进 `AVAssetWriterInputPixelBufferAdaptor` 的缓冲池，再交给 `AVAssetWriter`，编码 HEVC。
-- 声音加 `AVCaptureAudioDataOutput`，时间戳用采样缓冲自己的，不用系统时钟。
-- 开录前把 `activeVideoMinFrameDuration` 锁到 30fps。iPhone 13 上预览、录像两份渲染加起来要撑住 30fps，撑不住先降录像分辨率。
-- 方向和镜像跟预览一致，前置录下来也是镜像。
-- 先录 SDR，色彩标记 BT.709。HDR 以后单独做。
+以后可以做：录像分辨率高于取景（另一路按录像尺寸调色），4K，HDR。iPhone 13 上取景和录像两次渲染要撑住 30fps，撑不住先降录像尺寸。

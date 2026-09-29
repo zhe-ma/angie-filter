@@ -90,6 +90,7 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `FrameCaptionRenderer` | 主线程用 Core Graphics 画底栏 |
 | `PreviewMetalView` | 在后台队列把 `CIImage` 画进 `CAMetalLayer`。文件名是 `CoreImageFrameRenderer.swift` |
 | `PhotoLibraryStore` | 追加到最近项目。HEIC，失败则 JPEG 0.92。实况写带配对标识的 HEIC，照片和视频一起存 |
+| `VideoRecorder` | 录像：把画进取景的图写成 HEVC，带 AAC 声音，第一帧定尺寸 |
 | `LivePhotoMovieRenderer` | 把实况短视频逐帧过成片管线，写回 HEVC，带内容标识和静图时刻 |
 | `PhotoLibraryError` | 相册写入失败 |
 | `Locked` | `NSLock` 包一层，用来过队列传值 |
@@ -106,3 +107,4 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `PlaceReader` | 使用期间的位置，逆地理成城市和区。关掉地点就停止 |
 | `FilterStripView` | 滤镜分类和缩略图，只观察 `ThumbnailStore` |
 | `ReviewView` | 重拍或保存。图里已经带相框。实况做好后换成 `PHLivePhotoView`，长按播放 |
+| `VideoReviewView` | 录像的确认页，循环播放，重拍或保存 |

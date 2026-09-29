@@ -40,6 +40,14 @@ enum PhotoLibraryStore {
         }
     }
 
+    static func saveVideo(_ url: URL) async throws {
+        try await requestAccess()
+        try await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .video, fileURL: url, options: nil)
+        }
+    }
+
     /// Photos pairs a still with its movie through Apple maker note key 17, which must equal the movie's content identifier.
     static func writeLiveStill(_ image: UIImage, identifier: String, to url: URL) throws {
         guard let cgImage = image.cgImage,

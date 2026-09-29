@@ -77,6 +77,13 @@ struct ZoomStop: Identifiable, Equatable, Sendable {
     }
 }
 
+enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
+    case photo = "照片"
+    case video = "录像"
+
+    var id: Self { self }
+}
+
 struct CameraStatus: Equatable, Sendable {
     var authorization: CameraAuthorization = .unknown
     var isRunning = false

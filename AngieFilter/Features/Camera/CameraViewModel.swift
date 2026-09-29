@@ -92,6 +92,11 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var reviewLive: LiveReview = .none
     @Published var isSaving = false
     @Published private(set) var liveWanted = UserDefaults.standard.bool(forKey: CameraViewModel.liveKey)
+    @Published private(set) var mode = CaptureMode.photo
+    @Published private(set) var isRecording = false
+    @Published private(set) var recordingSeconds = 0
+    @Published private(set) var reviewVideo: URL?
+    private var recordingTimer: Timer?
     @Published var focusPoint: CGPoint?
     let thumbnails = ThumbnailStore()
     @Published var banner: String?
@@ -209,13 +214,13 @@ final class CameraViewModel: ObservableObject {
     }
 
     func setAspect(_ ratio: AspectRatio) {
-        guard aspectRatio != ratio else { return }
+        guard aspectRatio != ratio, !isRecording else { return }
         aspectRatio = ratio
         syncParameters()
     }
 
     var flashAvailable: Bool {
-        dualOn || status.facing == .back
+        mode == .photo && (dualOn || status.facing == .back)
     }
 
     func cycleFlash() {
@@ -230,6 +235,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func flipCamera() {
+        guard !isRecording else { return }
         if dualOn {
             swapLead()
             return
@@ -239,7 +245,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func toggleDual() {
-        guard dualAvailable, !dualTransition else { return }
+        guard dualAvailable, !dualTransition, !isRecording else { return }
         dualTransition = true
         if dualOn {
             rememberDualLook()
@@ -292,7 +298,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func setDualLayout(_ layout: DualLayout) {
-        guard dualLayout != layout else { return }
+        guard dualLayout != layout, !isRecording else { return }
         dualLayout = layout
         syncParameters()
     }
@@ -444,6 +450,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func toggleFrame() {
+        guard !isRecording else { return }
         if frameOpen {
             frameOpen = false
             return
@@ -587,6 +594,10 @@ final class CameraViewModel: ObservableObject {
 
     func capture() {
         guard !dualTransition else { return }
+        if mode == .video {
+            isRecording ? stopRecording() : startRecording()
+            return
+        }
         if dualOn {
             dualSession.capturePhoto()
         } else {
@@ -596,11 +607,92 @@ final class CameraViewModel: ObservableObject {
 
     /// Live Photo needs the single-camera photo pipeline; dual never offers it.
     var liveAvailable: Bool {
-        !dualOn && status.liveSupported
+        mode == .photo && !dualOn && status.liveSupported
+    }
+
+    /// Both sessions keep the mode, so switching single and dual in video mode keeps the microphone.
+    func setMode(_ next: CaptureMode) {
+        guard mode != next, !isRecording else { return }
+        mode = next
+        session.setVideoMode(next == .video)
+        dualSession.setVideoMode(next == .video)
+    }
+
+    /// The frame, aspect, and dual layout fix the movie's size, so they lock while recording. Looks can still change.
+    private func startRecording() {
+        guard !isRecording else { return }
+        frameOpen = false
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("video-\(UUID().uuidString).mov")
+        if dualOn {
+            dualSession.startRecording(to: url)
+        } else {
+            session.startRecording(to: url)
+        }
+        isRecording = true
+        recordingSeconds = 0
+        let start = Date()
+        recordingTimer?.invalidate()
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.recordingSeconds = Int(Date().timeIntervalSince(start))
+            }
+        }
+    }
+
+    func stopRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        let finish: (URL?) -> Void = { [weak self] url in
+            self?.recordingFinished(url)
+        }
+        if dualOn {
+            dualSession.stopRecording(finish)
+        } else {
+            session.stopRecording(finish)
+        }
+    }
+
+    private func recordingFinished(_ url: URL?) {
+        guard let url else {
+            flashBanner("录像没有保存下来")
+            return
+        }
+        discardVideo()
+        reviewVideo = url
+        closeFilters()
+        frameOpen = false
+    }
+
+    func retakeVideo() {
+        discardVideo()
+    }
+
+    func saveVideo() {
+        guard let url = reviewVideo, !isSaving else { return }
+        isSaving = true
+        Task {
+            do {
+                try await PhotoLibraryStore.saveVideo(url)
+                discardVideo()
+                flashBanner("已保存到最近项目")
+            } catch {
+                banner = "保存失败，可以再试一次"
+            }
+            isSaving = false
+        }
+    }
+
+    private func discardVideo() {
+        if let reviewVideo {
+            try? FileManager.default.removeItem(at: reviewVideo)
+        }
+        reviewVideo = nil
     }
 
     func toggleLive() {
-        guard liveAvailable else { return }
+        guard liveAvailable, !isRecording else { return }
         liveWanted.toggle()
         UserDefaults.standard.set(liveWanted, forKey: Self.liveKey)
         session.setLivePhoto(liveWanted)

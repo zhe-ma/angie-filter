@@ -3,7 +3,8 @@ import CoreImage
 import Metal
 import UIKit
 
-final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
+final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
+    AVCaptureAudioDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
     let previewView: PreviewMetalView
 
     var onStatus: ((CameraStatus) -> Void)?
@@ -33,8 +34,13 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let shutterPlace = Locked("")
     private let shutterHold = Locked(HoldOrientation.portrait)
     private let liveShots = Locked<[Int64: LiveShot]>([:])
+    private let audioOutput = AVCaptureAudioDataOutput()
+    private let audioQueue = DispatchQueue(label: "angie.camera.audio")
+    private let recorder = Locked<VideoRecorder?>(nil)
+    private let recordingHold = Locked(HoldOrientation.portrait)
     /// Touched only on `sessionQueue`.
     private var liveWanted = false
+    private var videoMode = false
     private var audioInput: AVCaptureDeviceInput?
 
     override init() {
@@ -123,12 +129,43 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.liveWanted = on
-            guard on, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
-                self.applyLivePhoto()
+            self.applyExtrasAskingForMicrophone(on)
+        }
+    }
+
+    /// Video mode adds the microphone and turns Live Photo off; photo mode puts both back as they were.
+    func setVideoMode(_ on: Bool) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.videoMode = on
+            self.applyExtrasAskingForMicrophone(on)
+        }
+    }
+
+    func startRecording(to url: URL) {
+        let hold = parameters.with { $0.hold }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let sound = self.session.outputs.contains(self.audioOutput)
+                ? self.audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mov)
+                : nil
+            self.recordingHold.with { $0 = hold }
+            self.recorder.with { $0 = VideoRecorder(url: url, audioSettings: sound) }
+        }
+    }
+
+    func stopRecording(_ completion: @escaping (URL?) -> Void) {
+        sessionQueue.async { [weak self] in
+            let active = self?.recorder.with { recorder -> VideoRecorder? in
+                defer { recorder = nil }
+                return recorder
+            }
+            guard let active else {
+                DispatchQueue.main.async { completion(nil) }
                 return
             }
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
-                self?.sessionQueue.async { self?.applyLivePhoto() }
+            active.finish { url in
+                DispatchQueue.main.async { completion(url) }
             }
         }
     }
@@ -169,6 +206,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        if output === audioOutput {
+            recorder.with { $0 }?.appendAudio(sampleBuffer)
+            return
+        }
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let start = PerfLog.now()
         let renderParameters = parameters.with { $0 }
@@ -181,6 +222,13 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         let graded = FrameImageMaker.graded(source, parameters: renderParameters)
         let framed = framedImage(graded, parameters: renderParameters, synchronousCaption: false)
         previewView.draw(image: framed, token: previewToken.with { $0 })
+        if let active = recorder.with({ $0 }) {
+            let hold = recordingHold.with { $0 }
+            let recorded = hold == .portrait
+                ? framed
+                : framedImage(FrameImageMaker.turned(graded, hold: hold), parameters: renderParameters, synchronousCaption: true)
+            active.appendVideo(recorded, at: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        }
         framePerf.add(["build": PerfLog.ms(since: start)])
     }
 
@@ -373,7 +421,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
         if !isConfigured {
             configure(facing: .back)
-            applyLivePhoto()
+            applyCaptureExtras()
         }
         if !session.isRunning {
             previewToken.with { $0 = previewView.claimDrawer() }
@@ -401,14 +449,25 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         status.facing = facing
         parameters.with { $0.orientation = Self.orientation(for: facing) }
         session.commitConfiguration()
-        applyLivePhoto()
+        applyCaptureExtras()
         PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
     }
 
-    /// Needs the session's inputs and preset in place: support is only known once the output is connected.
-    private func applyLivePhoto() {
+    private func applyExtrasAskingForMicrophone(_ wantsSound: Bool) {
+        guard wantsSound, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
+            applyCaptureExtras()
+            return
+        }
+        AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+            self?.sessionQueue.async { self?.applyCaptureExtras() }
+        }
+    }
+
+    /// The microphone, the audio output, and Live Photo, for the current mode.
+    /// Needs the session's inputs and preset in place: Live Photo support is only known once the output is connected.
+    private func applyCaptureExtras() {
         guard isConfigured else { return }
-        let wantsSound = liveWanted && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let wantsSound = (liveWanted || videoMode) && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         session.beginConfiguration()
         if wantsSound, audioInput == nil,
            let microphone = AVCaptureDevice.default(for: .audio),
@@ -420,8 +479,16 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             session.removeInput(input)
             audioInput = nil
         }
+        let wantsAudioOutput = videoMode && audioInput != nil
+        let hasAudioOutput = session.outputs.contains(audioOutput)
+        if wantsAudioOutput, !hasAudioOutput, session.canAddOutput(audioOutput) {
+            audioOutput.setSampleBufferDelegate(self, queue: audioQueue)
+            session.addOutput(audioOutput)
+        } else if !wantsAudioOutput, hasAudioOutput {
+            session.removeOutput(audioOutput)
+        }
         let supported = photoOutput.isLivePhotoCaptureSupported
-        photoOutput.isLivePhotoCaptureEnabled = liveWanted && supported
+        photoOutput.isLivePhotoCaptureEnabled = liveWanted && !videoMode && supported
         session.commitConfiguration()
         status.liveSupported = supported
         status.liveOn = photoOutput.isLivePhotoCaptureEnabled

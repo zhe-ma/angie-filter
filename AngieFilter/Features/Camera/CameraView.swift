@@ -20,6 +20,7 @@ struct CameraView: View {
     @State private var shutterTaps = 0
     @State private var paneHighlight = false
     @State private var paneHighlightToken = 0
+    @Environment(\.scenePhase) private var scenePhase
 
     private static let deckHeight: CGFloat = 156
 
@@ -28,6 +29,8 @@ struct CameraView: View {
             Color.black.ignoresSafeArea()
             if model.status.authorization == .denied {
                 permissionView
+            } else if let url = model.reviewVideo {
+                VideoReviewView(url: url, isSaving: model.isSaving, onRetake: model.retakeVideo, onSave: model.saveVideo)
             } else if let image = model.reviewImage {
                 ReviewView(image: image, live: model.reviewLive, isSaving: model.isSaving,
                            onRetake: model.retake, onSave: model.save)
@@ -37,6 +40,9 @@ struct CameraView: View {
         }
         .statusBarHidden()
         .preferredColorScheme(.dark)
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { model.stopRecording() }
+        }
     }
 
     private var cameraBody: some View {
@@ -44,6 +50,7 @@ struct CameraView: View {
             viewfinder
             deck
                 .frame(height: Self.deckHeight)
+            modeRow
             shutterRow
         }
     }
@@ -67,9 +74,27 @@ struct CameraView: View {
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
+            if model.isRecording {
+                recordingClock
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 12)
+                    .transition(.opacity)
+            }
         }
         .animation(.easeOut(duration: 0.2), value: model.banner)
+        .animation(.easeOut(duration: 0.2), value: model.isRecording)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var recordingClock: some View {
+        let seconds = model.recordingSeconds
+        return Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
+            .font(.system(size: 15, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Color.red, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .allowsHitTesting(false)
     }
 
     private var preview: some View {
@@ -232,13 +257,16 @@ struct CameraView: View {
                     .frame(width: 52, height: 44)
                     .contentShape(Rectangle())
             }
+            .lockedWhileRecording(model.isRecording)
             trayButton("squareshape.split.3x3", on: showsGrid) { showsGrid.toggle() }
             trayButton("level", on: showsLevel) { showsLevel.toggle() }
             if model.dualAvailable {
                 trayButton("rectangle.inset.bottomright.filled", on: model.dualOn, action: model.toggleDual)
+                    .lockedWhileRecording(model.isRecording)
             }
             trayButton(model.dualOn ? "arrow.left.arrow.right" : "arrow.triangle.2.circlepath", on: false,
                        action: model.flipCamera)
+                .lockedWhileRecording(model.isRecording && !model.dualOn)
         }
         .padding(.horizontal, 6)
         .background(CameraPalette.tray, in: Capsule())
@@ -270,6 +298,7 @@ struct CameraView: View {
                 EmptyView()
             }
         }
+        .lockedWhileRecording(model.isRecording)
     }
 
     private var veilRow: some View {
@@ -511,23 +540,49 @@ struct CameraView: View {
 
     // MARK: Shutter row
 
+    /// Hidden but still laid out while recording, so the shutter never moves under the finger.
+    private var modeRow: some View {
+        HStack(spacing: 18) {
+            ForEach(CaptureMode.allCases) { mode in
+                Button {
+                    model.setMode(mode)
+                } label: {
+                    Text(mode.rawValue)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(model.mode == mode ? CameraPalette.accent : Color.white.opacity(0.6))
+                        .frame(height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .opacity(model.isRecording ? 0 : 1)
+        .allowsHitTesting(!model.isRecording)
+        .animation(.easeOut(duration: 0.15), value: model.mode)
+    }
+
     private var shutterRow: some View {
         HStack {
             sideButton("photo.artframe", open: model.frameOpen, applied: model.frame.drawsBorder, action: model.toggleFrame)
+                .lockedWhileRecording(model.isRecording)
                 .frame(maxWidth: .infinity)
             Button {
                 shutterTaps += 1
                 model.capture()
             } label: {
+                let video = model.mode == .video
+                let recording = model.isRecording
                 ZStack {
                     Circle()
                         .stroke(Color.white, lineWidth: 3.5)
                         .frame(width: 78, height: 78)
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 65, height: 65)
+                    RoundedRectangle(cornerRadius: recording ? 7 : 32.5, style: .continuous)
+                        .fill(video ? Color.red : Color.white)
+                        .frame(width: recording ? 30 : 65, height: recording ? 30 : 65)
                 }
                 .contentShape(Circle())
+                .animation(.easeInOut(duration: 0.2), value: recording)
+                .animation(.easeInOut(duration: 0.2), value: video)
             }
             .buttonStyle(ShutterStyle())
             .sensoryFeedback(.impact(weight: .medium), trigger: shutterTaps)
@@ -672,6 +727,11 @@ private extension View {
     func upright(_ angle: Double) -> some View {
         rotationEffect(.radians(angle))
             .animation(.easeInOut(duration: 0.3), value: angle)
+    }
+
+    /// Controls that would change the movie's size mid-recording.
+    func lockedWhileRecording(_ locked: Bool) -> some View {
+        disabled(locked).opacity(locked ? 0.3 : 1)
     }
 }
 
