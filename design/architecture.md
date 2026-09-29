@@ -113,6 +113,8 @@ flowchart TB
   l --> store["LUTStore<br/>展开成 64³，最近 16 张"]
   store --> cube["CIColorCubeWithColorSpace"]
   b --> ci["CIFilter(name:)"]
+  grade --> e["effect<br/>EffectGrade<br/>配方、可选 LUT"]
+  e --> chain["EffectChain<br/>系统滤镜和 EffectKernels"]
 ```
 
 | 方案 | 资源 | 目录 |
@@ -120,6 +122,9 @@ flowchart TB
 | `none` | 无 | 原图 |
 | `lut` | `FilmLUTs/film-<id>.png` 或 `FujiLUTs/fuji-<机型>-<模拟>.png` | `Looks.json`（由导入脚本写） |
 | `builtIn` | 无 | `Looks.json` |
+| `effect` | 可选的 `FilmLUTs` 底色，kernel 在 `default.metallib` | `LabLooks.json`，手工编辑 |
+
+`effect` 里会移动像素的配方（鱼眼）先在 `GradeApplicator` 里弯曲，强度混合用弯曲后的图，避免重影。
 
 `LookFinish` 是目录里的褪色、光晕、颗粒、颗粒板和暗角默认值。`LookAdjustment.baseline` 从它和 `Look.strength` 得出第一次套上时的调节。所有非原图款的面板都是强度、褪色、颗粒、暗角，`Look.showsHalation` 为真时多一根光晕。
 
@@ -141,7 +146,8 @@ Domain 仍然不出现 `CIImage`。像素工作留在 CameraPipeline。
 | --- | --- | --- |
 | `Look`、`GrainPlateKind` | `AngieFilter/Domain/Looks/Look.swift` | 风格数据，以及第一次套上时的强度 |
 | `LookFinish` | `AngieFilter/Domain/Looks/LookFinish.swift` | 目录里的褪色、光晕、颗粒、暗角 |
-| `LookGrade`、`LUTGrade`、`BuiltInGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜的颜色从哪来 |
+| `LookGrade`、`LUTGrade`、`BuiltInGrade`、`EffectGrade` | `AngieFilter/Domain/Looks/LookGrade.swift` | 一款滤镜的颜色从哪来 |
+| `EffectRecipe` | `AngieFilter/Domain/Looks/EffectRecipe.swift` | 实验室配方的 id |
 | `LookFamily` | `AngieFilter/Domain/Looks/LookFamily.swift` | 分类。成员仍是 `Look` |
 | `LookLibrary` | `AngieFilter/Domain/Looks/LookLibrary.swift` | 读 `Looks.json`。缺失时只返回原图，不认识的条目跳过 |
 | `AspectRatio`、`AspectCrop` | `AngieFilter/Domain/Capture/` | 画幅和转正之后的中心裁切 |
@@ -170,6 +176,9 @@ Domain 仍然不出现 `CIImage`。像素工作留在 CameraPipeline。
 | `DualFrameComposer` | `AngieFilter/CameraPipeline/Rendering/DualFrameComposer.swift` |
 | `FrameCaptionKey`、`FrameCaptionCache`、`FrameCaptionRenderer` | `AngieFilter/CameraPipeline/Rendering/FrameCaption.swift` |
 | `ColorGrader` | `AngieFilter/CameraPipeline/Rendering/ColorGrader.swift` |
+| `EffectChain` | `AngieFilter/CameraPipeline/Rendering/EffectChain.swift` |
+| `EffectKernels` | `AngieFilter/CameraPipeline/Rendering/EffectKernels.swift`、`EffectKernels.metal` |
+| `AutoLevels` | `AngieFilter/CameraPipeline/Rendering/AutoLevels.swift` |
 | `LUTStore` | `AngieFilter/CameraPipeline/Rendering/LUTStore.swift` |
 | `GrainLibrary` | `AngieFilter/CameraPipeline/Rendering/GrainLibrary.swift` |
 | `PreviewMetalView` | `AngieFilter/CameraPipeline/Rendering/CoreImageFrameRenderer.swift` |

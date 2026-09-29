@@ -2,7 +2,7 @@
 
 预览、成片和缩略图走同一条路径。几何先做完，再做颜色，然后是一段共用的收尾，最后按强度溶回原图。
 
-渲染框架是 Core Image，Metal 后端。颜色不在仓库里手调：胶片款来自开源的 RawTherapee Film Simulation Collection，另有 Core Image 自带的八款照片效果。运行时只用系统内置滤镜，不写自定义 kernel。
+渲染框架是 Core Image，Metal 后端。颜色不在仓库里手调：胶片款来自开源的 RawTherapee Film Simulation Collection，另有 Core Image 自带的八款照片效果。正式分类运行时只用系统内置滤镜，不写自定义 kernel。例外是「实验室」分类：它照竞品逆向报告复现处理链，带几个小 kernel，见 [competitor-effects.md](competitor-effects.md)。
 
 ## 为什么是 Core Image
 

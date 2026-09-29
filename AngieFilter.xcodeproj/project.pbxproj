@@ -166,6 +166,8 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				MTLLINKER_FLAGS = "-cikernel";
+				MTL_COMPILER_FLAGS = "-fcikernel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AngieFilter 需要使用相机取景和拍摄。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "AngieFilter 会把大致地点印在相框上。";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "AngieFilter 会把拍好的照片保存到相册。";
@@ -197,6 +199,8 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				MTLLINKER_FLAGS = "-cikernel";
+				MTL_COMPILER_FLAGS = "-fcikernel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AngieFilter 需要使用相机取景和拍摄。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "AngieFilter 会把大致地点印在相框上。";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "AngieFilter 会把拍好的照片保存到相册。";

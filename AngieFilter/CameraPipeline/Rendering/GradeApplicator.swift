@@ -8,14 +8,18 @@ enum GradeApplicator {
         let amount = min(max(adjustment.intensity, 0), 1)
         guard amount > 0.001 else { return image }
 
-        let colored = ColorGrader.apply(image, grade: look.grade)
+        var base = image
+        if case .effect(let effect) = look.grade {
+            base = EffectChain.lens(image, grade: effect)
+        }
+        let colored = ColorGrader.apply(base, grade: look.grade)
         let finished = FilmFinish.apply(
             colored,
             adjustment: adjustment,
             grainPlate: look.finish.grainPlate,
             quality: quality
         )
-        return mix(image, finished, amount: amount)
+        return mix(base, finished, amount: amount)
     }
 
     static func mix(_ original: CIImage, _ graded: CIImage, amount: Float) -> CIImage {

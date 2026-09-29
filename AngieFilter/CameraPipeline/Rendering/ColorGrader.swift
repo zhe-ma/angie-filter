@@ -12,16 +12,19 @@ enum ColorGrader {
         case .none:
             return image
         case .lut(let lut):
-            return applyLUT(image, name: lut.imageName)
+            return self.lut(image, name: lut.imageName)
         case .builtIn(let builtIn):
             guard let filter = CIFilter(name: builtIn.filterName) else { return image }
             filter.setValue(image, forKey: kCIInputImageKey)
             return (filter.outputImage ?? image).cropped(to: image.extent)
+        case .effect(let effect):
+            return EffectChain.apply(image, grade: effect)
         }
     }
 
-    private static func applyLUT(_ image: CIImage, name: String) -> CIImage {
-        guard let data = LUTStore.shared.latticeData(named: name), let lutSpace else { return image }
+    /// A nil or missing name returns the image unchanged.
+    static func lut(_ image: CIImage, name: String?) -> CIImage {
+        guard let name, let data = LUTStore.shared.latticeData(named: name), let lutSpace else { return image }
         let filter = CIFilter.colorCubeWithColorSpace()
         filter.inputImage = image
         filter.cubeDimension = Float(LUTStore.dimension)

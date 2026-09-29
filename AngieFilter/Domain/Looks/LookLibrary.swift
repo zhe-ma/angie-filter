@@ -24,18 +24,25 @@ enum LookLibrary {
         grade: .none
     )
 
+    /// `Looks.json` is rewritten by Tools/ImportFilmLUTs.swift. `LabLooks.json` is edited by hand.
     private static func load() -> [Look] {
-        guard let url = Bundle.main.url(forResource: "Looks", withExtension: "json"),
+        let looks = records(named: "Looks").compactMap(\.look)
+        guard !looks.isEmpty else { return [original] }
+        return looks + records(named: "LabLooks").compactMap(\.look)
+    }
+
+    private static func records(named name: String) -> [LookRecord] {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let records = try? JSONDecoder().decode([LookRecord].self, from: data) else {
-            return [original]
+            return []
         }
-        let looks = records.compactMap(\.look)
-        return looks.isEmpty ? [original] : looks
+        return records
     }
 
     private static let familySpecs: [(id: String, name: String, ids: [String])] = [
         ("original", "原图", [Look.originalID]),
+        ("lab", "实验室", ["lab-fisheye-w", "lab-fisheye-f", "lab-leak", "lab-darkcorner", "lab-xt30", "lab-5s", "lab-gccd", "lab-4s", "lab-lomo", "lab-nn", "lab-fino35", "lab-valencia", "lab-nova", "lab-scarlet", "lab-noir", "lab-levels", "lab-crush", "lab-faded", "lab-expired", "lab-analog", "lab-hardbw", "lab-bloom"]),
         ("kodak", "柯达", ["portra160", "portra400", "portra400vc", "portra800", "ektar100", "elite200", "elite400", "kodachrome64", "ektachrome100vs", "elitechrome200", "trix400", "tmax100", "bw400cn"]),
         ("fuji", "富士", ["pro400h", "pro160c", "pro800z", "superia200", "superia400", "superia800", "reala100", "velvia50", "provia100f", "astia100f", "acros100", "neopan1600"]),
         ("fx-eterna55", "GFX 电影机", ["fx-eterna55-provia", "fx-eterna55-velvia", "fx-eterna55-astia", "fx-eterna55-classicchrome", "fx-eterna55-realaace", "fx-eterna55-proneg", "fx-eterna55-classicneg", "fx-eterna55-eterna", "fx-eterna55-eternabb", "fx-eterna55-acros"]),
@@ -79,6 +86,7 @@ private struct LookRecord: Decodable {
     let grade: String?
     let lut: String?
     let filter: String?
+    let effect: String?
     let strength: Float?
     let fade: Float?
     let halation: Float?
@@ -98,6 +106,9 @@ private struct LookRecord: Decodable {
         case "builtIn":
             guard let filter else { return nil }
             resolved = .builtIn(BuiltInGrade(filterName: filter))
+        case "effect":
+            guard let recipe = effect.flatMap(EffectRecipe.init(rawValue:)) else { return nil }
+            resolved = .effect(EffectGrade(recipe: recipe, lutName: lut, strength: min(max(strength ?? 1, 0), 1)))
         default:
             return nil
         }

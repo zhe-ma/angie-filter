@@ -42,11 +42,12 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `Look` | 一款滤镜。界面文案叫滤镜 |
 | `GrainPlateKind` | 无颗粒、细板、粗板 |
 | `LookFinish` | 目录里的褪色、光晕、颗粒、暗角 |
-| `LookGrade` | 这款走原图、LUT，还是 Core Image 照片效果 |
+| `LookGrade` | 这款走原图、LUT、Core Image 照片效果，还是实验室的处理链 |
 | `LUTGrade` | LUT 图文件名和默认强度 |
 | `BuiltInGrade` | Core Image 滤镜名 |
+| `EffectGrade`、`EffectRecipe` | 实验室一款的配方、可选 LUT 和默认强度 |
 | `LookFamily` | 一个分类，成员是 `Look` |
-| `LookLibrary` | 读 `Looks.json` |
+| `LookLibrary` | 读 `Looks.json`，再接上 `LabLooks.json` |
 | `LookAdjustment` | 这一次打开里改过的强度、褪色、光晕、颗粒和暗角 |
 | `RenderParameters` | 预览队列读的快照：画幅、滤镜、调节、相框、方向、质量、双摄排列 |
 | `DualLayout` | 上下、左右、画中画、圆窗、叠加 |
@@ -73,7 +74,10 @@ Domain 不 import SwiftUI、AVFoundation、Core Image。`CameraPipeline` 不 imp
 | `ZoomLadderBuilder` | 从当前后置设备读出变焦档 |
 | `FrameImageMaker` | 转正、前置镜像、画幅裁切，再交给调色 |
 | `GradeApplicator` | 颜色、收尾，再按强度溶回原图 |
-| `ColorGrader` | LUT 走 `CIColorCubeWithColorSpace`（sRGB），内置款调用 Core Image 滤镜 |
+| `ColorGrader` | LUT 走 `CIColorCubeWithColorSpace`（sRGB），内置款调用 Core Image 滤镜，实验室交给 `EffectChain` |
+| `EffectChain` | 实验室 22 款的处理链，来源和数值见 [competitor-effects.md](competitor-effects.md) |
+| `EffectKernels` | 从 `default.metallib` 读 `EffectKernels.metal` 里的 kernel |
+| `AutoLevels` | Lampa 的直方图黑白点和五点曲线 |
 | `FilmFinish` | 颜色之后的褪色、光晕、颗粒、暗角，只用系统滤镜 |
 | `LUTStore` | 把 512×512 LUT 图展开成 64³，最近 16 张 |
 | `GrainLibrary` | 细、粗两张颗粒板 |

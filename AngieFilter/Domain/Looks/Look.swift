@@ -21,8 +21,11 @@ struct Look: Identifiable, Equatable, Sendable {
 
     /// First mix toward the original when this look is picked.
     var strength: Float {
-        if case .lut(let grade) = grade { return grade.strength }
-        return 1
+        switch grade {
+        case .lut(let grade): return grade.strength
+        case .effect(let grade): return grade.strength
+        case .none, .builtIn: return 1
+        }
     }
 
     /// Halation stays hidden unless this look ships with it.
