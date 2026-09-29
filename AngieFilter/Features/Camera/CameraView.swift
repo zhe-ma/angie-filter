@@ -29,7 +29,8 @@ struct CameraView: View {
             if model.status.authorization == .denied {
                 permissionView
             } else if let image = model.reviewImage {
-                ReviewView(image: image, isSaving: model.isSaving, onRetake: model.retake, onSave: model.save)
+                ReviewView(image: image, live: model.reviewLive, isSaving: model.isSaving,
+                           onRetake: model.retake, onSave: model.save)
             } else {
                 cameraBody
             }
@@ -210,6 +211,10 @@ struct CameraView: View {
             trayButton(flashSymbol, on: model.status.flashMode != .off, action: model.cycleFlash)
                 .disabled(!model.flashAvailable)
                 .opacity(model.flashAvailable ? 1 : 0.3)
+            trayButton(model.liveWanted ? "livephoto" : "livephoto.slash",
+                       on: model.liveWanted && model.liveAvailable, action: model.toggleLive)
+                .disabled(!model.liveAvailable)
+                .opacity(model.liveAvailable ? 1 : 0.3)
             Menu {
                 Picker("画幅", selection: Binding(
                     get: { model.aspectRatio },

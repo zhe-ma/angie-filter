@@ -64,8 +64,18 @@ private enum ThumbnailBake {
     }
 }
 
+/// The review screen's Live Photo: the still shows at once, the graded movie follows a few seconds later.
+enum LiveReview: Equatable {
+    case none
+    case processing(Int64)
+    case ready(LivePhotoFiles)
+    case failed
+}
+
 @MainActor
 final class CameraViewModel: ObservableObject {
+    private static let liveKey = "capture.live"
+
     @Published private(set) var status = CameraStatus()
     @Published var aspectRatio: AspectRatio = .threeFour
     @Published var lookID = Look.originalID
@@ -79,7 +89,9 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var placeMissing = false
     @Published var familyID = "original"
     @Published var reviewImage: UIImage?
+    @Published private(set) var reviewLive: LiveReview = .none
     @Published var isSaving = false
+    @Published private(set) var liveWanted = UserDefaults.standard.bool(forKey: CameraViewModel.liveKey)
     @Published var focusPoint: CGPoint?
     let thumbnails = ThumbnailStore()
     @Published var banner: String?
@@ -139,8 +151,12 @@ final class CameraViewModel: ObservableObject {
             guard let self, !self.dualOn else { return }
             self.status = status
         }
-        session.onPhoto = { [weak self] image in
+        session.onPhoto = { [weak self] image, liveID in
             self?.showReview(image)
+            self?.reviewLive = liveID.map { .processing($0) } ?? .none
+        }
+        session.onLivePhoto = { [weak self] id, files in
+            self?.liveArrived(id, files: files)
         }
         session.onFailure = { [weak self] message in
             self?.banner = message
@@ -151,6 +167,7 @@ final class CameraViewModel: ObservableObject {
         }
         dualSession.onPhoto = { [weak self] image in
             self?.showReview(image)
+            self?.reviewLive = .none
         }
         dualSession.onFailure = { [weak self] message in
             self?.banner = message
@@ -174,6 +191,7 @@ final class CameraViewModel: ObservableObject {
         MotionHub.shared.start()
         syncParameters()
         MainThreadWatch.start()
+        session.setLivePhoto(liveWanted)
         session.start()
         dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -576,16 +594,38 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    /// Live Photo needs the single-camera photo pipeline; dual never offers it.
+    var liveAvailable: Bool {
+        !dualOn && status.liveSupported
+    }
+
+    func toggleLive() {
+        guard liveAvailable else { return }
+        liveWanted.toggle()
+        UserDefaults.standard.set(liveWanted, forKey: Self.liveKey)
+        session.setLivePhoto(liveWanted)
+        flashBanner(liveWanted ? "实况已打开" : "实况已关闭")
+    }
+
     func retake() {
         reviewImage = nil
+        discardLive()
     }
 
     func save() {
         guard let reviewImage, !isSaving else { return }
+        if case .processing = reviewLive { return }
         isSaving = true
+        let live = reviewLive
         Task {
             do {
-                try await PhotoLibraryStore.save(reviewImage)
+                if case .ready(let files) = live {
+                    try await PhotoLibraryStore.saveLive(files)
+                    files.discard()
+                    self.reviewLive = .none
+                } else {
+                    try await PhotoLibraryStore.save(reviewImage)
+                }
                 self.reviewImage = nil
                 banner = "已保存到最近项目"
                 Task {
@@ -749,9 +789,40 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func showReview(_ image: UIImage) {
+        discardLive()
         reviewImage = image
         closeFilters()
         frameOpen = false
+    }
+
+    private func liveArrived(_ id: Int64, files: LivePhotoFiles?) {
+        guard case .processing(let waiting) = reviewLive, waiting == id else {
+            files?.discard()
+            return
+        }
+        if let files {
+            reviewLive = .ready(files)
+        } else {
+            reviewLive = .failed
+            flashBanner("实况没有生成，会保存为照片")
+        }
+    }
+
+    private func discardLive() {
+        if case .ready(let files) = reviewLive {
+            files.discard()
+        }
+        reviewLive = .none
+    }
+
+    private func flashBanner(_ text: String) {
+        banner = text
+        Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if banner == text {
+                banner = nil
+            }
+        }
     }
 
     private func refreshPlaceTracking() {

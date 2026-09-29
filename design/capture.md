@@ -127,14 +127,29 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 - `NSCameraUsageDescription`
 - `NSPhotoLibraryAddUsageDescription`
 - `NSLocationWhenInUseUsageDescription`：地点只在相框打开地点开关时使用
+- `NSMicrophoneUsageDescription`：只在实况打开时录短视频的声音
+
+## Live Photo
+
+界面叫「实况」，工具行第二个按钮，开关记在 `UserDefaults` 的 `capture.live`，默认关。只在单摄：以 `AVCapturePhotoOutput.isLivePhotoCaptureSupported` 为准，双摄时按钮变灰。
+
+1. `CameraSessionController.applyLivePhoto` 在会话配好之后、`startRunning` 之前打开 `isLivePhotoCaptureEnabled`，换镜头后再设一次。开着实况且麦克风已授权时加一路音频输入，关掉就拿掉；没授权就录无声的。第一次打开实况时请求麦克风。
+2. 快门给 `livePhotoMovieFileURL`，按 `uniqueID` 记一条 `LiveShot`。静图和短视频到达的先后不定，两样都到了才开始处理。
+3. 静图照旧走 `stillPipeline`：镜像、裁切、调色、按拿法转正、套相框。确认页马上显示静图，角标「实况」转圈，保存按钮显示「实况处理中」。
+4. `LivePhotoMovieRenderer` 用 `AVAssetReader` 读出每帧，按轨道的 `preferredTransform` 转正（它按 y 朝下写，Core Image 是 y 朝上，要用翻转共轭），再过同一个 `stillPipeline`，用低优先级的 `CIContext` 渲进缓冲池，`AVAssetWriter` 写 HEVC，色彩标 P3。音轨原样拷。输出尺寸先拿一张同尺寸的空图过一遍管线量出来，取偶数。
+5. 配对靠两处同一个 UUID：静图 HEIC 的 Apple maker note 键 `17`，视频的 `com.apple.quicktime.content.identifier`。视频另写一条 `com.apple.quicktime.still-image-time` 元数据轨，时间用相机给的 `photoDisplayTime`。
+6. 做好后确认页换成 `PHLivePhotoView`，先轻播一下，之后长按播放。`PHLivePhoto.request(withResourceFileURLs:)` 能加载，说明这对文件能配上。
+7. 保存时 `PHAssetCreationRequest` 同时加 `.photo` 和 `.pairedVideo`。视频失败时横幅「实况没有生成，会保存为照片」，照常存静图。重拍、再拍或保存成功都删掉临时文件。
+
+颗粒是一张固定的平铺图，和取景一样不随帧跳动。
 
 ## 双摄
 
 单摄继续用上面的 `AVCaptureSession` 和虚拟相机。点「双摄」后先停掉它，再启动 `AVCaptureMultiCamSession`。退出时反过来。预览视图不换。两路先各自调色，合成后再套相框。成片在双摄自己的 `CIContext` 里导出，不占用预览那一个 context。模拟器 `isMultiCamSupported` 为 false，工具行没有这个按钮。
 
-## 以后：Live Photo 和录像
+## 以后：录像
 
-这一阶段仍只拍照片。下面是以后要做时的路线，现在的会话结构已经能接上。
+下面是以后要做录像时的路线，现在的会话结构已经能接上。
 
 为什么不用第三方相机库：
 
@@ -146,13 +161,6 @@ Info.plist 由构建设置生成，声明相机、「仅添加照片」和相框
 | NextLevel | 没有 | 没有 | 可以拿帧自己处理 | 双摄指的是双镜头虚拟设备，不是多摄会话 |
 
 第三方库都把会话握在自己手里。我们的预览要从视频输出拿帧、调色、画进 `CAMetalLayer`，双摄还要 `AVCaptureMultiCamSession`，这两件事它们都挡在中间。
-
-**Live Photo。** 只在单摄。以 `AVCapturePhotoOutput.isLivePhotoCaptureSupported` 为准，多摄会话里不出现入口。
-
-1. 会话已经是 `.photo` 预设。打开 `isLivePhotoCaptureEnabled`，快门时给 `livePhotoMovieFileURL`。
-2. 静图照旧走 `FrameImageMaker` 和 `GradeApplicator`。
-3. 短视频在 `didFinishProcessingLivePhotoToMovieFileAt` 之后逐帧调色：`AVAssetReader` 读出，用同一个 `GradeApplicator` 和相框渲进 `CVPixelBuffer`，`AVAssetWriter` 写回。音轨原样拷。静图时刻的元数据轨（`com.apple.quicktime.still-image-time`）和内容标识要一起拷，否则相册认不出是一对。`AVAssetExportSession` 加 `AVVideoComposition` 的做法会丢这条元数据轨，要在真机上确认，丢就用读写器。
-4. `PHAssetCreationRequest` 同时加 `.photo` 和 `.pairedVideo`。
 
 **录像。** 单摄和双摄都能做，录的是调好色、带相框的画面。
 

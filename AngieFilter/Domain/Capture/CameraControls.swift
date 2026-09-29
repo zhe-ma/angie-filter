@@ -87,4 +87,7 @@ struct CameraStatus: Equatable, Sendable {
     var focalLength: CGFloat = 24
     var zoomStops: [ZoomStop] = []
     var hasCamera = true
+    /// The current camera and preset can record a Live Photo movie. Never true for dual.
+    var liveSupported = false
+    var liveOn = false
 }

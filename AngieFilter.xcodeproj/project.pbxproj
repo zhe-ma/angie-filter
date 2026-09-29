@@ -170,6 +170,7 @@
 				MTL_COMPILER_FLAGS = "-fcikernel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AngieFilter 需要使用相机取景和拍摄。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "AngieFilter 会把大致地点印在相框上。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "AngieFilter 拍实况照片时会录下现场声音。";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "AngieFilter 会把拍好的照片保存到相册。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -203,6 +204,7 @@
 				MTL_COMPILER_FLAGS = "-fcikernel";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AngieFilter 需要使用相机取景和拍摄。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "AngieFilter 会把大致地点印在相框上。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "AngieFilter 拍实况照片时会录下现场声音。";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "AngieFilter 会把拍好的照片保存到相册。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

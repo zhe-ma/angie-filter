@@ -7,7 +7,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     let previewView: PreviewMetalView
 
     var onStatus: ((CameraStatus) -> Void)?
-    var onPhoto: ((UIImage) -> Void)?
+    /// The still, and the shot's ID when a Live Photo movie will follow through `onLivePhoto`.
+    var onPhoto: ((UIImage, Int64?) -> Void)?
+    /// Nil files mean the movie failed; the still is still usable.
+    var onLivePhoto: ((Int64, LivePhotoFiles?) -> Void)?
     var onFailure: ((String) -> Void)?
 
     private let session = AVCaptureSession()
@@ -29,6 +32,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private let shutterDate = Locked("")
     private let shutterPlace = Locked("")
     private let shutterHold = Locked(HoldOrientation.portrait)
+    private let liveShots = Locked<[Int64: LiveShot]>([:])
+    /// Touched only on `sessionQueue`.
+    private var liveWanted = false
+    private var audioInput: AVCaptureDeviceInput?
 
     override init() {
         guard let metalDevice = MTLCreateSystemDefaultDevice() else {
@@ -111,6 +118,21 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         }
     }
 
+    /// Live Photo movies carry sound when the microphone is allowed; without it they are silent.
+    func setLivePhoto(_ on: Bool) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.liveWanted = on
+            guard on, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
+                self.applyLivePhoto()
+                return
+            }
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+                self?.sessionQueue.async { self?.applyLivePhoto() }
+            }
+        }
+    }
+
     func setFlash(_ mode: FlashMode) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -136,6 +158,11 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
             self.captureFacing.with { $0 = self.status.facing }
             if let connection = self.photoOutput.connection(with: .video) {
                 PhotoOrientation.preparePortrait(connection)
+            }
+            if self.photoOutput.isLivePhotoCaptureEnabled {
+                settings.livePhotoMovieFileURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("capture-\(settings.uniqueID).mov")
+                self.liveShots.with { $0[settings.uniqueID] = LiveShot() }
             }
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
@@ -179,17 +206,119 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         renderParameters.frameDate = shutterDate.with { $0 }
         renderParameters.framePlace = shutterPlace.with { $0 }
         renderParameters.hold = shutterHold.with { $0 }
-        let source = FrameImageMaker.sourceImage(from: photoImage, parameters: renderParameters)
-        let graded = FrameImageMaker.graded(source, parameters: renderParameters)
-        let turned = FrameImageMaker.turned(graded, hold: renderParameters.hold)
-        let framed = framedImage(turned, parameters: renderParameters, synchronousCaption: true)
+        let framed = stillPipeline(photoImage, parameters: renderParameters)
         guard let image = previewView.makeImage(framed) else {
             publishFailure("照片处理失败")
             return
         }
+        let id = photo.resolvedSettings.uniqueID
+        let live = photo.resolvedSettings.livePhotoMovieDimensions.width > 0
+            && liveShots.with { shots -> Bool in
+                guard shots[id] != nil else { return false }
+                shots[id]?.still = (image, renderParameters)
+                return true
+            }
         DispatchQueue.main.async { [weak self] in
-            self?.onPhoto?(image)
+            self?.onPhoto?(image, live ? id : nil)
         }
+        if live {
+            renderLiveIfReady(id)
+        }
+    }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL,
+        duration: CMTime,
+        photoDisplayTime: CMTime,
+        resolvedSettings: AVCaptureResolvedPhotoSettings,
+        error: Error?
+    ) {
+        let id = resolvedSettings.uniqueID
+        guard error == nil else {
+            try? FileManager.default.removeItem(at: outputFileURL)
+            failLive(id)
+            return
+        }
+        let known = liveShots.with { shots -> Bool in
+            guard shots[id] != nil else { return false }
+            shots[id]?.movie = (outputFileURL, photoDisplayTime)
+            return true
+        }
+        guard known else {
+            try? FileManager.default.removeItem(at: outputFileURL)
+            return
+        }
+        renderLiveIfReady(id)
+    }
+
+    /// A shot whose still never arrived has no review screen waiting for it.
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
+        let id = resolvedSettings.uniqueID
+        let orphan = liveShots.with { shots -> LiveShot? in
+            guard let shot = shots[id], shot.still == nil else { return nil }
+            shots[id] = nil
+            return shot
+        }
+        if let movie = orphan?.movie?.url {
+            try? FileManager.default.removeItem(at: movie)
+        }
+    }
+
+    private func renderLiveIfReady(_ id: Int64) {
+        let ready = liveShots.with { shots -> LiveShot? in
+            guard let shot = shots[id], shot.still != nil, shot.movie != nil else { return nil }
+            shots[id] = nil
+            return shot
+        }
+        guard let ready, let still = ready.still, let movie = ready.movie else { return }
+        let identifier = UUID().uuidString
+        let folder = FileManager.default.temporaryDirectory
+        let files = LivePhotoFiles(
+            photo: folder.appendingPathComponent("live-\(identifier).heic"),
+            movie: folder.appendingPathComponent("live-\(identifier).mov")
+        )
+        let parameters = still.parameters
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let start = PerfLog.now()
+            do {
+                try PhotoLibraryStore.writeLiveStill(still.image, identifier: identifier, to: files.photo)
+                try await LivePhotoMovieRenderer.render(
+                    source: movie.url,
+                    destination: files.movie,
+                    identifier: identifier,
+                    stillTime: movie.stillTime
+                ) { [weak self] frame in
+                    self?.stillPipeline(frame, parameters: parameters) ?? frame
+                }
+                try? FileManager.default.removeItem(at: movie.url)
+                PerfLog.line("live movie rendered in \(Int(PerfLog.ms(since: start)))ms")
+                DispatchQueue.main.async { [weak self] in
+                    self?.onLivePhoto?(id, files)
+                }
+            } catch {
+                PerfLog.line("live movie failed: \(error)")
+                try? FileManager.default.removeItem(at: movie.url)
+                files.discard()
+                self.failLive(id)
+            }
+        }
+    }
+
+    private func failLive(_ id: Int64) {
+        liveShots.with { $0[id] = nil }
+        DispatchQueue.main.async { [weak self] in
+            self?.onLivePhoto?(id, nil)
+        }
+    }
+
+    /// The still's steps from an upright, unmirrored image: mirror and crop, grade, turn for the hold, frame.
+    private func stillPipeline(_ image: CIImage, parameters: RenderParameters) -> CIImage {
+        let source = FrameImageMaker.sourceImage(from: image, parameters: parameters)
+        let graded = FrameImageMaker.graded(source, parameters: parameters)
+        let turned = FrameImageMaker.turned(graded, hold: parameters.hold)
+        return framedImage(turned, parameters: parameters, synchronousCaption: true)
     }
 
     private func framedImage(_ image: CIImage, parameters: RenderParameters, synchronousCaption: Bool) -> CIImage {
@@ -244,6 +373,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
         if !isConfigured {
             configure(facing: .back)
+            applyLivePhoto()
         }
         if !session.isRunning {
             previewToken.with { $0 = previewView.claimDrawer() }
@@ -255,7 +385,7 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     private func reconfigure(facing: CameraFacing) {
         session.beginConfiguration()
-        for input in session.inputs {
+        for input in session.inputs where input !== audioInput {
             session.removeInput(input)
         }
         guard let next = Self.device(for: facing),
@@ -271,8 +401,31 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
         status.facing = facing
         parameters.with { $0.orientation = Self.orientation(for: facing) }
         session.commitConfiguration()
-        publishStatus()
+        applyLivePhoto()
         PerfLog.line("single: format \(CaptureFormatLog.describe(next.activeFormat, on: next))")
+    }
+
+    /// Needs the session's inputs and preset in place: support is only known once the output is connected.
+    private func applyLivePhoto() {
+        guard isConfigured else { return }
+        let wantsSound = liveWanted && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        session.beginConfiguration()
+        if wantsSound, audioInput == nil,
+           let microphone = AVCaptureDevice.default(for: .audio),
+           let input = try? AVCaptureDeviceInput(device: microphone),
+           session.canAddInput(input) {
+            session.addInput(input)
+            audioInput = input
+        } else if !wantsSound, let input = audioInput {
+            session.removeInput(input)
+            audioInput = nil
+        }
+        let supported = photoOutput.isLivePhotoCaptureSupported
+        photoOutput.isLivePhotoCaptureEnabled = liveWanted && supported
+        session.commitConfiguration()
+        status.liveSupported = supported
+        status.liveOn = photoOutput.isLivePhotoCaptureEnabled
+        publishStatus()
     }
 
     private func configure(facing: CameraFacing) {
@@ -367,4 +520,10 @@ final class CameraSessionController: NSObject, AVCaptureVideoDataOutputSampleBuf
     private static func orientation(for facing: CameraFacing) -> CGImagePropertyOrientation {
         facing == .front ? .leftMirrored : .right
     }
+}
+
+/// The still and the movie finish in either order; the movie is rendered once both are in.
+private struct LiveShot {
+    var still: (image: UIImage, parameters: RenderParameters)?
+    var movie: (url: URL, stillTime: CMTime)?
 }
